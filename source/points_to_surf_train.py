@@ -177,7 +177,8 @@ def points_to_surf_train(opt):
 
     if os.path.exists(log_dirname) or os.path.exists(model_filename):
         if opt.name != 'test':
-            response = input('A training run named "{}" already exists, overwrite? (y/n) '.format(opt.name))
+            # response = input('A training run named "{}" already exists, overwrite? (y/n) '.format(opt.name))
+            response = 'y'
             if response == 'y':
                 del_log = True
             else:

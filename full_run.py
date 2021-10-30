@@ -45,7 +45,7 @@ if __name__ == '__main__':
     single_transformer = 0
     shared_transformer = 0
 
-    # os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
     train_params = [
         '--name', model_name,
@@ -79,6 +79,9 @@ if __name__ == '__main__':
     train_opt = points_to_surf_train.parse_arguments(train_params)
     points_to_surf_train.points_to_surf_train(train_opt)
 
+    # TODO. scan their dataset e.g. ABC and rerun their experiments (see Table 1 in their paper).
+    # with added sensor info
+    
     valsets = ['abc_minimal', ]
     for valset in valsets:
         # validate model
