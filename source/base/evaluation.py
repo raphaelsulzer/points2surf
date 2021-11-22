@@ -312,19 +312,29 @@ def mesh_comparison(new_meshes_dir_abs, ref_meshes_dir_abs,
 
     new_mesh_files = [f for f in os.listdir(new_meshes_dir_abs)
                       if os.path.isfile(os.path.join(new_meshes_dir_abs, f))]
-    ref_mesh_files = [f for f in os.listdir(ref_meshes_dir_abs)
-                      if os.path.isfile(os.path.join(ref_meshes_dir_abs, f))]
 
-    if dataset_file_abs is None:
-        mesh_files_to_compare_set = set(ref_mesh_files)  # set for efficient search
-    else:
-        if not os.path.isfile(dataset_file_abs):
-            raise ValueError('File does not exist: {}'.format(dataset_file_abs))
-        with open(dataset_file_abs) as f:
-            mesh_files_to_compare_set = f.readlines()
-            mesh_files_to_compare_set = [f.replace('\n', '') + '.ply' for f in mesh_files_to_compare_set]
-            mesh_files_to_compare_set = [f.split('.')[0] for f in mesh_files_to_compare_set]
-            mesh_files_to_compare_set = set(mesh_files_to_compare_set)
+    print("new meshes: ",new_mesh_files)
+
+    ref_mesh_files = []
+    for f in new_mesh_files:
+        c = f.split('_')[0]
+        gt_file = os.path.join(c,'2_watertight',f)
+        ref_mesh_files.append(gt_file)
+
+    print("ref meshes: ",ref_mesh_files)
+
+    # if dataset_file_abs is None:
+    #     mesh_files_to_compare_set = set(ref_mesh_files)  # set for efficient search
+    # else:
+    #     if not os.path.isfile(dataset_file_abs):
+    #         raise ValueError('File does not exist: {}'.format(dataset_file_abs))
+    #     with open(dataset_file_abs) as f:
+    #         mesh_files_to_compare_set = f.readlines()
+    #         mesh_files_to_compare_set = [f.replace('\n', '') + '.ply' for f in mesh_files_to_compare_set]
+    #         mesh_files_to_compare_set = [f.split('.')[0] for f in mesh_files_to_compare_set]
+    #         mesh_files_to_compare_set = set(mesh_files_to_compare_set)
+
+    mesh_files_to_compare_set = set([f.split('.')[0] for f in new_mesh_files])
 
     # # skip if everything is unchanged
     # new_mesh_files_abs = [os.path.join(new_meshes_dir_abs, f) for f in new_mesh_files]

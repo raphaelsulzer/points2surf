@@ -29,7 +29,7 @@ def load_shape(point_filename, imp_surf_query_filename, imp_surf_dist_filename,
     mmap_mode = None
     # mmap_mode = 'r'
 
-    pts_np = np.load(point_filename + '.npy', mmap_mode=mmap_mode)
+    pts_np = np.load(point_filename, mmap_mode=mmap_mode)['points']
     if pts_np.shape[1] > 3:
         pts_np = pts_np[:, 0:3]
     if pts_np.dtype != np.float32:
@@ -213,15 +213,19 @@ class Cache:
 
 class PointcloudPatchDataset(data.Dataset):
 
-    def __init__(self, root, shape_list_filename, points_per_patch, patch_radius, patch_features, epsilon,
+    def __init__(self, root, scan, shape_list_filename, points_per_patch, patch_radius, patch_features, epsilon,
                  seed=None, identical_epochs=False, center='point',
                  cache_capacity=1, point_count_std=0.0,
                  pre_processed_patches=False, query_grid_resolution=None,
                  sub_sample_size=500, reconstruction=False, uniform_subsample=False,
                  num_workers=1):
 
+        shapes_per_class = 1
+
+
         # initialize parameters
         self.root = root
+        self.scan = scan
         self.shape_list_filename = shape_list_filename
         self.patch_features = patch_features
         self.points_per_patch = points_per_patch
@@ -259,12 +263,20 @@ class PointcloudPatchDataset(data.Dataset):
         self.shape_cache = Cache(cache_capacity, self, PointcloudPatchDataset.load_shape_by_index)
 
         # get all shape names in the dataset
+        temp = []
         self.shape_names = []
-        with open(os.path.join(root, self.shape_list_filename)) as f:
-            self.shape_names = f.readlines()
-        self.shape_names = [x.strip() for x in self.shape_names]
-        self.shape_names = list(filter(None, self.shape_names))
+        classes = os.listdir(self.root)
+        # remove class x
+        if 'x' in classes: classes.remove('x')
+        for c in classes:
+            # with open(os.path.join(self.root, c, "p2s", self.shape_list_filename)) as f:
+            with open(os.path.join(self.root, c, "convonet", scan, self.shape_list_filename)) as f:
+                self.shape_names = f.readlines()[:shapes_per_class]
+            self.shape_names = [c+"_"+x.strip() for x in self.shape_names]
+            self.shape_names = list(filter(None, self.shape_names))
+            temp.append(self.shape_names)
 
+        self.shape_names = [item for sublist in temp for item in sublist]
         # initialize rng for picking points in a patch
         if self.seed is None:
             self.seed = np.random.random_integers(0, 2**32-1, 1)[0]
@@ -278,17 +290,23 @@ class PointcloudPatchDataset(data.Dataset):
 
             def load_pts():
                 # load from text file and save in more efficient numpy format
-                point_filename = os.path.join(self.root, '04_pts', shape_name + '.xyz')
-                if os.path.isfile(point_filename) or os.path.isfile(point_filename + '.npy'):
-                    pts = file_utils.load_npy_if_valid(point_filename, 'float32', mmap_mode='r')
-                    if pts.shape[1] > 3:
-                        pts = pts[:, 0:3]
-                else:  # if no .xyz file, try .off and discard connectivity
-                    mesh_filename = os.path.join(self.root, '04_pts', shape_name+'.xyz')
-                    pts, _ = mesh_io.load_mesh(mesh_filename)
-                    np.savetxt(fname=os.path.join(self.root, '04_pts', shape_name+'.xyz'), X=pts)
-                    np.save(os.path.join(self.root, '04_pts', shape_name+'.xyz.npy'), pts)
-                return pts
+                temp = self.shape_names[shape_ind].split('_')
+                c = temp[0]
+                id = temp[1]
+                point_filename = os.path.join(self.root, c, 'convonet', '43', id, 'pointcloud.npz')
+                return np.load(point_filename, mmap_mode=None)['points']
+
+                # point_filename = os.path.join(self.root, c,'04_pts', shape_name + '.xyz')
+                # if os.path.isfile(point_filename) or os.path.isfile(point_filename + '.npy'):
+                #     pts = file_utils.load_npy_if_valid(point_filename, 'float32', mmap_mode='r')
+                #     if pts.shape[1] > 3:
+                #         pts = pts[:, 0:3]
+                # else:  # if no .xyz file, try .off and discard connectivity
+                #     mesh_filename = os.path.join(self.root, '04_pts', shape_name+'.xyz')
+                #     pts, _ = mesh_io.load_mesh(mesh_filename)
+                #     np.savetxt(fname=os.path.join(self.root, '04_pts', shape_name+'.xyz'), X=pts)
+                #     np.save(os.path.join(self.root, '04_pts', shape_name+'.xyz.npy'), pts)
+                # return pts
 
             if self.include_imp_surf:
                 if self.reconstruction:
@@ -303,7 +321,7 @@ class PointcloudPatchDataset(data.Dataset):
                     # mesh_io.write_off('debug/{}'.format(shape_name + '.off'), grid_pts_near_surf_ms, [])
                     # self.shape_patch_count.append(query_grid_resolution ** 3)  # full grid
                 else:
-                    query_dist_filename = os.path.join(self.root, '05_query_pts', shape_name + '.ply.npy')
+                    query_dist_filename = os.path.join(self.root,  shape_name.split('_')[0],'p2s', '05_query_pts', shape_name + '.off.npy')
                     query_dist = np.load(query_dist_filename)
                     self.shape_patch_count.append(query_dist.shape[0])
             else:
@@ -348,6 +366,7 @@ class PointcloudPatchDataset(data.Dataset):
         shape = self.shape_cache.get(shape_ind)
         imp_surf_query_point_ms = shape.imp_surf_query_point_ms[patch_ind]
 
+        ## MINE: this is where they get the patch from a query point
         # get neighboring points
         patch_pts_ids, patch_pts_ps, pts_patch_ms, patch_radius_ms = \
             get_patch_points(shape=shape, query_point=imp_surf_query_point_ms)
@@ -432,10 +451,15 @@ class PointcloudPatchDataset(data.Dataset):
     # load shape from a given shape index
     def load_shape_by_index(self, shape_ind):
 
-        point_filename = os.path.join(self.root, '04_pts', self.shape_names[shape_ind]+'.xyz')
-        imp_surf_query_filename = os.path.join(self.root, '05_query_pts', self.shape_names[shape_ind]+'.ply.npy') \
+        # point_filename = os.path.join(self.root, '04_pts', self.shape_names[shape_ind]+'.xyz')
+        temp = self.shape_names[shape_ind].split('_')
+        c = temp[0]
+        id = temp[1]
+        point_filename = os.path.join(self.root, c, 'convonet', '43', id, 'pointcloud.npz')
+
+        imp_surf_query_filename = os.path.join(self.root,c, 'p2s','05_query_pts', self.shape_names[shape_ind]+'.off.npy') \
             if self.include_imp_surf and self.pre_processed_patches and not self.reconstruction else None
-        imp_surf_dist_filename = os.path.join(self.root, '05_query_dist', self.shape_names[shape_ind]+'.ply.npy') \
+        imp_surf_dist_filename = os.path.join(self.root,c, 'p2s','05_query_dist', self.shape_names[shape_ind]+'.off.npy') \
             if self.include_imp_surf and self.pre_processed_patches and not self.reconstruction else None
 
         return load_shape(

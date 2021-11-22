@@ -105,7 +105,9 @@ def get_output_dimensions(train_opt):
 
 def make_dataset(train_opt, eval_opt):
     dataset = data_loader.PointcloudPatchDataset(
-        root=eval_opt.indir, shape_list_filename=eval_opt.dataset,
+        root=eval_opt.indir,
+        shape_list_filename=eval_opt.dataset,
+        scan='43',
         points_per_patch=train_opt.points_per_patch,
         patch_features=train_opt.outputs,
         seed=eval_opt.seed,
@@ -164,7 +166,7 @@ def make_regressor(train_opt, pred_dim, model_filename, device):
     )
 
     p2s_model.cuda(device=device)  # same order as in training
-    p2s_model = torch.nn.DataParallel(p2s_model)
+    # p2s_model = torch.nn.DataParallel(p2s_model)
     p2s_model.load_state_dict(torch.load(model_filename))
     p2s_model.eval()
     return p2s_model
@@ -296,6 +298,7 @@ def save_evaluation(datasampler, dataset, eval_opt, model_out_dir, output_ids, o
 def points_to_surf_eval(eval_opt):
 
     models = eval_opt.models.split()
+    print(models)
 
     if eval_opt.seed < 0:
         eval_opt.seed = random.randint(1, 10000)

@@ -239,9 +239,9 @@ def call_necessary(file_in, file_out, min_file_size=0):
         output_file_mtime_arg_min = np.argmin(np.array([os.path.getmtime(f) for f in file_out]))
         input_file_mtime_max = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(oldest_input_file_mtime))
         output_file_mtime_min = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(youngest_output_file_mtime))
-        print('Input file {} \nis newer than output file {}: \n{} >= {}'.format(
-            file_in[input_file_mtime_arg_max], file_out[output_file_mtime_arg_min],
-            input_file_mtime_max, output_file_mtime_min))
+        # print('Input file {} \nis newer than output file {}: \n{} >= {}'.format(
+        #     file_in[input_file_mtime_arg_max], file_out[output_file_mtime_arg_min],
+        #     input_file_mtime_max, output_file_mtime_min))
         return True
 
     return False

@@ -195,18 +195,19 @@ def implicit_surface_to_mesh(query_dist_ms, query_pts_ms,
     start = time.time()
     volume = propagate_sign(volume, sigma, certainty_threshold)
     end = time.time()
-    print('Sign propagation took: {}'.format(end - start))
+    # print('Sign propagation took: {}'.format(end - start))
 
     # clamp to -1..+1
     volume[volume < -1.0] = -1.0
     volume[volume > 1.0] = 1.0
 
     # green = inside; red = outside
-    query_dist_ms_norm = query_dist_ms / np.max(np.abs(query_dist_ms))
-    query_pts_color = np.zeros((query_dist_ms_norm.shape[0], 3))
-    query_pts_color[query_dist_ms_norm < 0.0, 0] = np.abs(query_dist_ms_norm[query_dist_ms_norm < 0.0]) + 1.0 / 2.0
-    query_pts_color[query_dist_ms_norm > 0.0, 1] = query_dist_ms_norm[query_dist_ms_norm > 0.0] + 1.0 / 2.0
-    mesh_io.write_off(volume_out_file, query_pts_ms, np.array([]), colors_vertex=query_pts_color)
+    ### MINE: export query points, probably do not need this
+    # query_dist_ms_norm = query_dist_ms / np.max(np.abs(query_dist_ms))
+    # query_pts_color = np.zeros((query_dist_ms_norm.shape[0], 3))
+    # query_pts_color[query_dist_ms_norm < 0.0, 0] = np.abs(query_dist_ms_norm[query_dist_ms_norm < 0.0]) + 1.0 / 2.0
+    # query_pts_color[query_dist_ms_norm > 0.0, 1] = query_dist_ms_norm[query_dist_ms_norm > 0.0] + 1.0 / 2.0
+    # mesh_io.write_off(volume_out_file, query_pts_ms, np.array([]), colors_vertex=query_pts_color)
 
     if volume.min() < 0.0 and volume.max() > 0.0:
         # reconstruct mesh from volume using marching cubes
@@ -214,7 +215,7 @@ def implicit_surface_to_mesh(query_dist_ms, query_pts_ms,
         start = time.time()
         v, f, normals, values = measure.marching_cubes_lewiner(volume, 0)
         end = time.time()
-        print('Marching Cubes Lewiner took: {}'.format(end - start))
+        # print('Marching Cubes Lewiner took: {}'.format(end - start))
 
         if v.size == 0 and f.size == 0:
             print('Warning: marching cubes gives no result!')

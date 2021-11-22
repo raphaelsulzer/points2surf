@@ -17,6 +17,7 @@ from source.base import file_utils
 from source import sdf
 from source.base import point_cloud
 
+import argparse
 
 def _convert_mesh(in_mesh, out_mesh):
 
@@ -469,7 +470,7 @@ def get_query_pts_dist_ms(
     print('### get query points')
     call_params = []
     files_mesh = [f for f in os.listdir(dir_in_mesh_abs)
-                  if os.path.isfile(os.path.join(dir_in_mesh_abs, f)) and f[-4:] == '.ply']
+                  if os.path.isfile(os.path.join(dir_in_mesh_abs, f)) and f[-4:] == '.off']
     for fi, f in enumerate(files_mesh):
         file_in_mesh = os.path.join(dir_in_mesh_abs, f)
         file_out_query_pts = os.path.join(dir_out_query_pts_abs, f + '.npy')
@@ -506,9 +507,9 @@ def make_dataset_splits(base_dir, dataset_dir, final_out_dir, seed=42, only_test
     files_test.sort()
     files_train.sort()
 
-    file_train_set = os.path.join(base_dir, dataset_dir, 'trainset.txt')
-    file_test_set = os.path.join(base_dir, dataset_dir, 'testset.txt')
-    file_val_set = os.path.join(base_dir, dataset_dir, 'valset.txt')
+    file_train_set = os.path.join(base_dir, dataset_dir, 'p2s', 'trainset.txt')
+    file_test_set = os.path.join(base_dir, dataset_dir, 'p2s', 'testset.txt')
+    file_val_set = os.path.join(base_dir, dataset_dir, 'p2s', 'valset.txt')
 
     file_utils.make_dir_for_file(file_test_set)
     nl = '\n'
@@ -674,7 +675,7 @@ scanner_noise_sigma = 0.01
         """)
 
 
-def make_dataset(dataset_name: str, blensor_bin: str, base_dir: str, num_processes=7,
+def make_dataset(category: str, blensor_bin: str, base_dir: str, num_processes=7,
                  seed=42, num_query_points_per_shape=2000):
     """
     Make dataset from meshes.
@@ -687,12 +688,15 @@ def make_dataset(dataset_name: str, blensor_bin: str, base_dir: str, num_process
     :return:
     """
 
-    dataset_dir = dataset_name
+    # dataset_dir = dataset_name
 
-    config_file = os.path.join(base_dir, dataset_dir, 'settings.ini')
+
+    config_file = os.path.join(base_dir, args.dataset_dir, '..', 'settings.ini')
     config = configparser.ConfigParser()
     read_config(config, config_file)
     print('Processing dataset: ' + config_file)
+
+    dataset_dir = os.path.join(args.dataset_dir,category)
 
     # no signed distances needed, therefore less strict requirements for input meshes
     only_for_evaluation = bool(int(config['general']['only_for_evaluation']))  # default: false
@@ -720,56 +724,58 @@ def make_dataset(dataset_name: str, blensor_bin: str, base_dir: str, num_process
          '06_poisson_rec', '06_mc_gt_recon', '06_poisson_rec_gt_normals',
          '06_normals', '06_normals/pts', '06_dist_from_p_normals']
 
-    if filter_broken_inputs:
-        clean_up_broken_inputs(base_dir=base_dir, dataset_dir=dataset_dir,
-                               final_out_dir='00_base_meshes', final_out_extension=None,
-                               clean_up_dirs=dirs_to_clean, broken_dir='broken')
 
-    print('### convert base meshes to ply')
-    convert_meshes(in_dir_abs=os.path.join(base_dir, dataset_dir, '00_base_meshes'),
-                   out_dir_abs=os.path.join(base_dir, dataset_dir, '01_base_meshes_ply'),
-                   target_file_type='.ply', num_processes=num_processes)
+    # if filter_broken_inputs:
+    #     clean_up_broken_inputs(base_dir=base_dir, dataset_dir=dataset_dir,
+    #                            final_out_dir='00_base_meshes', final_out_extension=None,
+    #                            clean_up_dirs=dirs_to_clean, broken_dir='broken')
+    #
+    # print('### convert base meshes to ply')
+    # convert_meshes(in_dir_abs=os.path.join(base_dir, dataset_dir, '00_base_meshes'),
+    #                out_dir_abs=os.path.join(base_dir, dataset_dir, '01_base_meshes_ply'),
+    #                target_file_type='.ply', num_processes=num_processes)
+    #
+    # if filter_broken_inputs:
+    #     clean_up_broken_inputs(base_dir=base_dir, dataset_dir=dataset_dir,
+    #                            final_out_dir='01_base_meshes_ply', final_out_extension='.ply',
+    #                            clean_up_dirs=dirs_to_clean, broken_dir='broken')
+    #
+    # print('### clean mesh')
+    # clean_meshes(base_dir=base_dir, dataset_dir=dataset_dir,
+    #              dir_in_meshes='01_base_meshes_ply', dir_out='02_meshes_cleaned', num_processes=num_processes,
+    #              num_max_faces=None if only_for_evaluation else 50000,
+    #              enforce_solid=True)
+    #
+    # if filter_broken_inputs:
+    #     clean_up_broken_inputs(base_dir=base_dir, dataset_dir=dataset_dir,
+    #                            final_out_dir='02_meshes_cleaned', final_out_extension='.ply',
+    #                            clean_up_dirs=dirs_to_clean, broken_dir='broken')
+    #
+    # print('### scale and translate mesh')
+    # normalize_meshes(base_dir=base_dir, in_dir='02_meshes_cleaned', out_dir='03_meshes', dataset_dir=dataset_dir,
+    #                  num_processes=num_processes)
+    #
+    # print('### sample with Blensor')
+    # sample_blensor(base_dir=base_dir, dataset_dir=dataset_dir, blensor_bin=blensor_bin,
+    #                dir_in='03_meshes', dir_out='04_pts', dir_out_vis='04_pts_vis', dir_out_pcd='04_pcd',
+    #                dir_blensor_scripts='04_blensor_py',
+    #                num_scans_per_mesh_min=num_scans_per_mesh_min, num_scans_per_mesh_max=num_scans_per_mesh_max,
+    #                num_processes=num_processes,
+    #                min_pts_size=0 if only_for_evaluation else 5000,
+    #                scanner_noise_sigma_min=scanner_noise_sigma_min, scanner_noise_sigma_max=scanner_noise_sigma_max)
+    #
+    # if filter_broken_inputs:
+    #     clean_up_broken_inputs(base_dir=base_dir, dataset_dir=dataset_dir,
+    #                            final_out_dir='04_pts', final_out_extension='.xyz.npy',
+    #                            clean_up_dirs=dirs_to_clean, broken_dir='broken')
 
-    if filter_broken_inputs:
-        clean_up_broken_inputs(base_dir=base_dir, dataset_dir=dataset_dir,
-                               final_out_dir='01_base_meshes_ply', final_out_extension='.ply',
-                               clean_up_dirs=dirs_to_clean, broken_dir='broken')
-
-    print('### clean mesh')
-    clean_meshes(base_dir=base_dir, dataset_dir=dataset_dir,
-                 dir_in_meshes='01_base_meshes_ply', dir_out='02_meshes_cleaned', num_processes=num_processes,
-                 num_max_faces=None if only_for_evaluation else 50000,
-                 enforce_solid=True)
-
-    if filter_broken_inputs:
-        clean_up_broken_inputs(base_dir=base_dir, dataset_dir=dataset_dir,
-                               final_out_dir='02_meshes_cleaned', final_out_extension='.ply',
-                               clean_up_dirs=dirs_to_clean, broken_dir='broken')
-
-    print('### scale and translate mesh')
-    normalize_meshes(base_dir=base_dir, in_dir='02_meshes_cleaned', out_dir='03_meshes', dataset_dir=dataset_dir,
-                     num_processes=num_processes)
-
-    print('### sample with Blensor')
-    sample_blensor(base_dir=base_dir, dataset_dir=dataset_dir, blensor_bin=blensor_bin,
-                   dir_in='03_meshes', dir_out='04_pts', dir_out_vis='04_pts_vis', dir_out_pcd='04_pcd',
-                   dir_blensor_scripts='04_blensor_py',
-                   num_scans_per_mesh_min=num_scans_per_mesh_min, num_scans_per_mesh_max=num_scans_per_mesh_max,
-                   num_processes=num_processes,
-                   min_pts_size=0 if only_for_evaluation else 5000,
-                   scanner_noise_sigma_min=scanner_noise_sigma_min, scanner_noise_sigma_max=scanner_noise_sigma_max)
-
-    if filter_broken_inputs:
-        clean_up_broken_inputs(base_dir=base_dir, dataset_dir=dataset_dir,
-                               final_out_dir='04_pts', final_out_extension='.xyz.npy',
-                               clean_up_dirs=dirs_to_clean, broken_dir='broken')
-
+    # TODO: start from here
     if not only_for_evaluation:
         print('### make query points, calculate signed distances')
-        dir_mesh = '03_meshes'
-        dir_query_dist = '05_query_dist'
-        dir_query_pts_ms = '05_query_pts'
-        dir_out_query_vis = '05_query_vis'  # None to disable
+        dir_mesh = '2_watertight'
+        dir_query_dist = 'p2s/05_query_dist'
+        dir_query_pts_ms = 'p2s/05_query_pts'
+        dir_out_query_vis = 'p2s/05_query_vis'  # None to disable
         far_query_pts_ratio = 0.5  # 0.1  # not too little or the network fails at the inside classification
         get_query_pts_dist_ms(
             base_dir=base_dir, dataset_dir=dataset_dir, dir_in_mesh=dir_mesh,
@@ -781,17 +787,17 @@ def make_dataset(dataset_name: str, blensor_bin: str, base_dir: str, num_process
             far_query_pts_ratio=far_query_pts_ratio,
             signed_distance_batch_size=500,
             num_processes=num_processes,
-            debug=True)
+            debug=False)
 
         print('### statistics and clean up')
         if filter_broken_inputs:
             clean_up_broken_inputs(base_dir=base_dir, dataset_dir=dataset_dir,
-                                   final_out_dir='05_query_pts' if only_for_evaluation else '05_query_dist',
+                                   final_out_dir='p2s/05_query_pts' if only_for_evaluation else 'p2s/05_query_dist',
                                    final_out_extension='.npy',
                                    clean_up_dirs=dirs_to_clean, broken_dir='broken')
 
     make_dataset_splits(base_dir=base_dir, dataset_dir=dataset_dir,
-                        final_out_dir='04_pts' if only_for_evaluation else'05_query_pts',
+                        final_out_dir='p2s/04_pts' if only_for_evaluation else'p2s/05_query_pts',
                         seed=seed, only_test_set=only_for_evaluation, testset_ratio=0.1)
 
 
@@ -799,13 +805,32 @@ if __name__ == "__main__":
 
     blensor_bin = "bin/Blensor-x64.AppImage"
     base_dir = 'datasets'
-    num_processes = 7
-    datasets = [
-        'abc', 'abc_extra_noisy', 'abc_noisefree',
-        'famous_original', 'famous_noisefree', 'famous_dense', 'famous_extra_noisy', 'famous_sparse',
-        'thingi10k_scans_original', 'thingi10k_scans_dense', 'thingi10k_scans_sparse',
-        'thingi10k_scans_extra_noisy', 'thingi10k_scans_noisefree'
-    ]
+    num_processes = 4
+    # datasets = [
+    #     'abc', 'abc_extra_noisy', 'abc_noisefree',
+    #     'famous_original', 'famous_noisefree', 'famous_dense', 'famous_extra_noisy', 'famous_sparse',
+    #     'thingi10k_scans_original', 'thingi10k_scans_dense', 'thingi10k_scans_sparse',
+    #     'thingi10k_scans_extra_noisy', 'thingi10k_scans_noisefree'
+    # ]
 
-    for d in datasets:
-        make_dataset(dataset_name=d, blensor_bin=blensor_bin, base_dir=base_dir, num_processes=num_processes)
+    parser = argparse.ArgumentParser('Sample a watertight mesh.')
+
+    parser.add_argument('--dataset_dir', type=str, default="/mnt/raphael/ModelNet10",
+                        help='Path to the dataset.')
+
+    parser.add_argument('--category', type=str, default=None,
+                        help='Process specific category class only')
+
+    args = parser.parse_args()
+
+
+    if args.category is not None:
+        categories = [args.category]
+    else:
+        categories = os.listdir(args.dataset_dir)
+
+    for i,c in enumerate(categories):
+        if c.startswith('.'):
+            continue
+        print("\n############## Processing {} - {}/{} ############\n".format(c,i+1,len(categories)))
+        make_dataset(category=c, blensor_bin=blensor_bin, base_dir=base_dir, num_processes=num_processes)

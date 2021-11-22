@@ -16,19 +16,23 @@ from source.base import evaluation
 if __name__ == '__main__':
 
     model_name = 'vanilla'
-    dataset = 'abc_minimal'
-    base_dir = 'datasets'
+    dataset = 'ModelNet10'
+    base_dir = "/mnt/raphael"
     in_dir_train = os.path.join(base_dir, dataset)
 
-    train_set = 'trainset.txt'
-    val_set = 'valset.txt'
-    test_set = 'testset.txt'
+    # train_set = 'trainset.txt'
+    # val_set = 'valset.txt'
+    # test_set = 'testset.txt'
+    train_set = 'train.lst'
+    val_set = 'test.lst'
+    test_set = 'test.lst'
 
     # features = ['imp_surf', 'patch_pts_ids', 'p_index']  # l2-loss
     features = ['imp_surf_magnitude', 'imp_surf_sign', 'patch_pts_ids', 'p_index']  # l2-loss + BCE-loss
 
     # workers = 22  # for strong training machine
-    workers = 7  # for typical PC
+    # workers = 7  # for typical PC
+    workers = 1  # for debugging
 
     # batch_size = 501  # ~7.5 GB memory on 4 2080 TI for 300 patch points + 1000 sub-sample points
     # batch_size = 3001  # ~10 GB memory on 4 2080 TI for 50 patch points + 200 sub-sample points
@@ -45,7 +49,7 @@ if __name__ == '__main__':
     single_transformer = 0
     shared_transformer = 0
 
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    # os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     train_params = [
         '--name', model_name,
@@ -79,9 +83,6 @@ if __name__ == '__main__':
     train_opt = points_to_surf_train.parse_arguments(train_params)
     points_to_surf_train.points_to_surf_train(train_opt)
 
-    # TODO. scan their dataset e.g. ABC and rerun their experiments (see Table 1 in their paper).
-    # with added sensor info
-    
     valsets = ['abc_minimal', ]
     for valset in valsets:
         # validate model

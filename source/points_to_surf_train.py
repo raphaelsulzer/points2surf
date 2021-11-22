@@ -17,9 +17,11 @@ import torch.utils.data
 from torch.utils.tensorboard import SummaryWriter
 
 from source.points_to_surf_model import PointsToSurfModel
+from source import points_to_surf_eval
 from source import data_loader
 from source import sdf_nn
 from source.base import evaluation
+from source import sdf
 
 debug = False
 
@@ -287,6 +289,7 @@ def points_to_surf_train(opt):
     # create train and test dataset loaders
     train_dataset = data_loader.PointcloudPatchDataset(
         root=opt.indir,
+        scan="43",
         shape_list_filename=opt.trainset,
         points_per_patch=opt.points_per_patch,
         patch_features=target_features,
@@ -325,6 +328,7 @@ def points_to_surf_train(opt):
 
     test_dataset = data_loader.PointcloudPatchDataset(
         root=opt.indir,
+        scan="43",
         shape_list_filename=opt.testset,
         points_per_patch=opt.points_per_patch,
         patch_features=target_features,
@@ -373,7 +377,6 @@ def points_to_surf_train(opt):
     except OSError:
         pass
 
-    train_fraction_done = 0.0
 
     log_writer = SummaryWriter(log_dirname, comment=opt.name)
     log_writer.add_scalar('LR', opt.lr, 0)
@@ -387,7 +390,7 @@ def points_to_surf_train(opt):
 
     if opt.refine == '':
         p2s_model.cuda(device=device)
-        p2s_model = torch.nn.DataParallel(p2s_model)
+        # p2s_model = torch.nn.DataParallel(p2s_model)
 
     train_num_batch = len(train_dataloader)
     test_num_batch = len(test_dataloader)
@@ -401,13 +404,12 @@ def points_to_surf_train(opt):
 
     for epoch in range(start_epoch, opt.nepoch, 1):
 
-        train_enum = enumerate(train_dataloader, 0)
 
         test_batchind = -1
-        test_fraction_done = 0.0
+        test_fraction_done = 10000.0
         test_enum = enumerate(test_dataloader, 0)
 
-        for train_batchind, batch_data_train in train_enum:
+        for train_batchind, batch_data_train in enumerate(train_dataloader):
 
             # batch data to GPU
             for key in batch_data_train.keys():
@@ -438,14 +440,13 @@ def points_to_surf_train(opt):
 
             train_fraction_done = (train_batchind+1) / train_num_batch
 
-            if debug:
-                from source import evaluation
-                evaluation.visualize_patch(
-                    patch_pts_ps=batch_data_train['patch_pts_ps'][0].cpu(),
-                    query_point_ps=batch_data_train['imp_surf_query_point_ps'][0].cpu(),
-                    pts_sub_sample_ms=batch_data_train['pts_sub_sample_ms'][0].cpu(),
-                    query_point_ms=batch_data_train['imp_surf_query_point_ms'][0].cpu(),
-                    file_path='debug/patch_train.off')
+            # if debug:
+            #     evaluation.visualize_patch(
+            #         patch_pts_ps=batch_data_train['patch_pts_ps'][0].cpu(),
+            #         query_point_ps=batch_data_train['imp_surf_query_point_ps'][0].cpu(),
+            #         pts_sub_sample_ms=batch_data_train['pts_sub_sample_ms'][0].cpu(),
+            #         query_point_ms=batch_data_train['imp_surf_query_point_ms'][0].cpu(),
+            #         file_path='debug/patch_train.off')
 
             metrics_dict = calc_metrics(outputs=opt.outputs, pred=pred_train, gt_data=batch_data_train)
 
@@ -506,6 +507,69 @@ def points_to_surf_train(opt):
         log_writer.add_scalar('LR', lr_after_update, current_step)
 
         log_writer.flush()
+
+
+        # MINE: reconstruct test shapes using current model
+        batch_size = 100  # ~7 GB memory on 1 1070 for 300 patch points + 1000 sub-sample points
+
+        # grid_resolution = 256  # quality like in the paper
+        grid_resolution = 128  # quality for a short test
+        rec_epsilon = 3
+        certainty_threshold = 13
+        sigma = 5
+        workers = 1
+
+        # reconstruct meshes from predicted SDFs
+        # out_dir = os.path.join('results')
+        out_dir = os.path.join('/mnt/raphael/ModelNet10_out/p2s/conventional')
+
+        res_dir_rec = os.path.join(out_dir, 'rec')
+
+        # reconstruct SDFs from testset
+        print('Points2Surf is reconstructing {} into {}'.format(out_dir, res_dir_rec))
+        recon_params = [
+            '--indir', opt.indir,
+            '--outdir', out_dir,
+            '--dataset', opt.testset,
+            '--query_grid_resolution', str(128),
+            '--reconstruction', str(True),
+            '--models', 'vanilla',
+            '--batchSize', str(batch_size),
+            '--workers', str(workers),
+            '--cache_capacity', str(5),
+            '--epsilon', str(rec_epsilon),
+        ]
+        recon_opt = points_to_surf_eval.parse_arguments(recon_params)
+        points_to_surf_eval.points_to_surf_eval(recon_opt)
+
+        # reconstruct meshes from predicted SDFs
+        imp_surf_dist_ms_dir = os.path.join(res_dir_rec, 'dist_ms')
+        query_pts_ms_dir = os.path.join(res_dir_rec, 'query_pts_ms')
+        vol_out_dir = os.path.join(res_dir_rec, 'vol')
+        mesh_out_dir = os.path.join(res_dir_rec, 'mesh')
+        sdf.implicit_surface_to_mesh_directory(
+            imp_surf_dist_ms_dir, query_pts_ms_dir,
+            vol_out_dir, mesh_out_dir,
+            grid_resolution, sigma, certainty_threshold,
+            workers)
+
+        print("\nStart evaluation")
+
+        
+
+        # # get Hausdorff distance for reconstructed meshes
+        # new_meshes_dir_abs = os.path.join(res_dir_rec, 'mesh')
+        # ref_meshes_dir_abs = os.path.join(opt.indir)
+        # csv_file = os.path.join(res_dir_rec, 'hausdorff_dist_pred_rec.csv')
+        # evaluation.mesh_comparison(
+        #     new_meshes_dir_abs=new_meshes_dir_abs,
+        #     ref_meshes_dir_abs=ref_meshes_dir_abs,
+        #     num_processes=workers,
+        #     report_name=csv_file,
+        #     samples_per_model=10000,
+        #     dataset_file_abs=os.path.join(opt.indir, opt.testset))
+
+
 
     log_writer.close()
 

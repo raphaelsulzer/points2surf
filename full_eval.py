@@ -61,7 +61,7 @@ def full_eval(opt):
             opt.certainty_threshold,
             opt.workers)
         end = time.time()
-        print('Sign propagation took: {}'.format(end - start))
+        # print('Sign propagation took: {}'.format(end - start))
 
         new_meshes_dir_abs = os.path.join(res_dir_rec, 'mesh')
         ref_meshes_dir_abs = os.path.join(opt.indir, '03_meshes')
