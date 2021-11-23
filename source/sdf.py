@@ -1,10 +1,10 @@
-import time
+import time, os
 
 import numpy as np
 import trimesh
 
 from source.base import utils
-
+from source.evaluate_mesh import eval_mesh
 
 def make_sample_points_for_3d_grid_unit_cube(grid_resolution):
     # convert from unit cube to voxel center cells (half a cell is missing at min and max)
@@ -184,6 +184,8 @@ def implicit_surface_to_mesh(query_dist_ms, query_pts_ms,
     from source.base import mesh_io
     from source.base import file_utils
 
+    mesh = None
+
     if query_dist_ms.max() == 0.0 and query_dist_ms.min() == 0.0:
         print('WARNING: implicit surface for {} contains only zeros'.format(volume_out_file))
         return
@@ -203,17 +205,18 @@ def implicit_surface_to_mesh(query_dist_ms, query_pts_ms,
 
     # green = inside; red = outside
     ### MINE: export query points, probably do not need this
-    # query_dist_ms_norm = query_dist_ms / np.max(np.abs(query_dist_ms))
-    # query_pts_color = np.zeros((query_dist_ms_norm.shape[0], 3))
-    # query_pts_color[query_dist_ms_norm < 0.0, 0] = np.abs(query_dist_ms_norm[query_dist_ms_norm < 0.0]) + 1.0 / 2.0
-    # query_pts_color[query_dist_ms_norm > 0.0, 1] = query_dist_ms_norm[query_dist_ms_norm > 0.0] + 1.0 / 2.0
-    # mesh_io.write_off(volume_out_file, query_pts_ms, np.array([]), colors_vertex=query_pts_color)
+    query_dist_ms_norm = query_dist_ms / np.max(np.abs(query_dist_ms))
+    query_pts_color = np.zeros((query_dist_ms_norm.shape[0], 3))
+    query_pts_color[query_dist_ms_norm < 0.0, 0] = np.abs(query_dist_ms_norm[query_dist_ms_norm < 0.0]) + 1.0 / 2.0
+    query_pts_color[query_dist_ms_norm > 0.0, 1] = query_dist_ms_norm[query_dist_ms_norm > 0.0] + 1.0 / 2.0
+    mesh_io.write_off(volume_out_file, query_pts_ms, np.array([]), colors_vertex=query_pts_color)
 
     if volume.min() < 0.0 and volume.max() > 0.0:
         # reconstruct mesh from volume using marching cubes
         from skimage import measure
         start = time.time()
-        v, f, normals, values = measure.marching_cubes_lewiner(volume, 0)
+        # v, f, normals, values = measure.marching_cubes_lewiner(volume, 0)
+        v, f, normals, values = measure.marching_cubes(volume, 0)
         end = time.time()
         # print('Marching Cubes Lewiner took: {}'.format(end - start))
 
@@ -230,16 +233,38 @@ def implicit_surface_to_mesh(query_dist_ms, query_pts_ms,
     else:
         print('Warning: volume for marching cubes contains no 0-level set!')
 
+    return mesh
 
-def implicit_surface_to_mesh_file(query_dist_ms_file, query_pts_ms_file,
+
+def implicit_surface_to_mesh_file(recon_opt,
+                                  query_dist_ms_file, query_pts_ms_file,
                                   volume_out_file, mc_out_file, grid_res, sigma, certainty_threshold):
     query_dist_ms = np.load(query_dist_ms_file)
     query_pts_ms = np.load(query_pts_ms_file)
-    implicit_surface_to_mesh(query_dist_ms, query_pts_ms,
+    mesh = implicit_surface_to_mesh(query_dist_ms, query_pts_ms,
                              volume_out_file, mc_out_file, grid_res, sigma, certainty_threshold)
 
 
-def implicit_surface_to_mesh_directory(imp_surf_dist_ms_dir, query_pts_ms_dir,
+
+    # print(mc_out_file)
+
+    if(mesh is not None):
+
+        data_dir = recon_opt.indir
+        name = mc_out_file.split('/')[-1]
+        cname = name.split('_')[0]
+        id = name.split('_')[1][:-4]
+        gt_file = os.path.join(data_dir,cname,'eval',id,'points.npz')
+
+        return eval_mesh(gt_file, mesh)
+
+    else:
+        return 0.0
+
+
+
+def implicit_surface_to_mesh_directory(recon_opt,
+                                       imp_surf_dist_ms_dir, query_pts_ms_dir,
                                        vol_out_dir, mesh_out_dir,
                                        grid_res, sigma, certainty_threshold, num_processes=1):
 
@@ -261,10 +286,11 @@ def implicit_surface_to_mesh_directory(imp_surf_dist_ms_dir, query_pts_ms_dir,
         # skip if result already exists and is newer than the input
         if file_utils.call_necessary([files_dist_ms_in_abs[fi], files_query_pts_ms_in_abs[fi]],
                                      [files_vol_out_abs[fi], files_mesh_out_abs[fi]]):
-            calls.append((files_dist_ms_in_abs[fi], files_query_pts_ms_in_abs[fi],
+            calls.append((recon_opt, files_dist_ms_in_abs[fi], files_query_pts_ms_in_abs[fi],
                           files_vol_out_abs[fi], files_mesh_out_abs[fi], grid_res, sigma, certainty_threshold))
 
-    utils_mp.start_process_pool(implicit_surface_to_mesh_file, calls, num_processes)
+    iou = utils_mp.start_process_pool(implicit_surface_to_mesh_file, calls, num_processes)
+    return np.array(iou).mean()
 
 
 def visualize_query_points(query_pts_ms, query_dist_ms, file_out_off):

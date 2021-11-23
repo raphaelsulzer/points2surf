@@ -59,7 +59,7 @@ if __name__ == '__main__':
         '--trainset', train_set,
         '--testset', val_set,
         '--net_size', str(1024),
-        '--nepoch', str(10),
+        '--nepoch', str(100),
         '--lr', str(0.01),
         '--debug', str(0),
         '--workers', str(workers),
@@ -83,73 +83,75 @@ if __name__ == '__main__':
     train_opt = points_to_surf_train.parse_arguments(train_params)
     points_to_surf_train.points_to_surf_train(train_opt)
 
-    valsets = ['abc_minimal', ]
-    for valset in valsets:
-        # validate model
-        in_dir_val = os.path.join(base_dir, valset)
-        out_dir_val = os.path.join('results', model_name, valset)
-        res_dir_eval = os.path.join(out_dir_val, 'eval')
-        eval_params = [
-            '--indir', in_dir_val,
-            '--outdir', out_dir_val,
-            '--dataset', val_set,
-            '--models', model_name,
-            '--batchSize', str(batch_size),
-            '--workers', str(workers),
-            '--cache_capacity', str(5),
-        ]
-        eval_opt = points_to_surf_eval.parse_arguments(eval_params)
-        points_to_surf_eval.points_to_surf_eval(eval_opt)
-        evaluation.eval_predictions(
-            os.path.join(res_dir_eval, 'eval'),
-            os.path.join(in_dir_val, '05_query_dist'),
-            os.path.join(res_dir_eval, 'rme_comp_res.csv'),
-            unsigned=False)
 
-    testsets = ['abc_minimal', ]
-    for testset in testsets:
-        out_dir = os.path.join('results', model_name, testset)
-        res_dir_rec = os.path.join(out_dir, 'rec')
 
-        # reconstruct SDFs from testset
-        in_dir_test = os.path.join(base_dir, testset)
-        print('Points2Surf is reconstructing {} into {}'.format(out_dir, res_dir_rec))
-        recon_params = [
-                       '--indir', in_dir_test,
-                       '--outdir', out_dir,
-                       '--dataset', test_set,
-                       '--query_grid_resolution', str(grid_resolution),
-                       '--reconstruction', str(True),
-                       '--models', model_name,
-                       '--batchSize', str(batch_size),
-                       '--workers', str(workers),
-                       '--cache_capacity', str(5),
-                       '--epsilon', str(rec_epsilon),
-                       ]
-        recon_opt = points_to_surf_eval.parse_arguments(recon_params)
-        points_to_surf_eval.points_to_surf_eval(recon_opt)
-
-        # reconstruct meshes from predicted SDFs
-        imp_surf_dist_ms_dir = os.path.join(res_dir_rec, 'dist_ms')
-        query_pts_ms_dir = os.path.join(res_dir_rec, 'query_pts_ms')
-        vol_out_dir = os.path.join(res_dir_rec, 'vol')
-        mesh_out_dir = os.path.join(res_dir_rec, 'mesh')
-        sdf.implicit_surface_to_mesh_directory(
-            imp_surf_dist_ms_dir, query_pts_ms_dir,
-            vol_out_dir, mesh_out_dir,
-            grid_resolution, sigma, certainty_threshold,
-            workers)
-
-        # get Hausdorff distance for reconstructed meshes
-        new_meshes_dir_abs = os.path.join(res_dir_rec, 'mesh')
-        ref_meshes_dir_abs = os.path.join(in_dir_test, '03_meshes')
-        csv_file = os.path.join(res_dir_rec, 'hausdorff_dist_pred_rec.csv')
-        evaluation.mesh_comparison(
-            new_meshes_dir_abs=new_meshes_dir_abs,
-            ref_meshes_dir_abs=ref_meshes_dir_abs,
-            num_processes=workers,
-            report_name=csv_file,
-            samples_per_model=10000,
-            dataset_file_abs=os.path.join(in_dir_test, test_set))
+    # valsets = ['abc_minimal', ]
+    # for valset in valsets:
+    #     # validate model
+    #     in_dir_val = os.path.join(base_dir, valset)
+    #     out_dir_val = os.path.join('results', model_name, valset)
+    #     res_dir_eval = os.path.join(out_dir_val, 'eval')
+    #     eval_params = [
+    #         '--indir', in_dir_val,
+    #         '--outdir', out_dir_val,
+    #         '--dataset', val_set,
+    #         '--models', model_name,
+    #         '--batchSize', str(batch_size),
+    #         '--workers', str(workers),
+    #         '--cache_capacity', str(5),
+    #     ]
+    #     eval_opt = points_to_surf_eval.parse_arguments(eval_params)
+    #     points_to_surf_eval.points_to_surf_eval(eval_opt)
+    #     evaluation.eval_predictions(
+    #         os.path.join(res_dir_eval, 'eval'),
+    #         os.path.join(in_dir_val, '05_query_dist'),
+    #         os.path.join(res_dir_eval, 'rme_comp_res.csv'),
+    #         unsigned=False)
+    #
+    # testsets = ['abc_minimal', ]
+    # for testset in testsets:
+    #     out_dir = os.path.join('results', model_name, testset)
+    #     res_dir_rec = os.path.join(out_dir, 'rec')
+    #
+    #     # reconstruct SDFs from testset
+    #     in_dir_test = os.path.join(base_dir, testset)
+    #     print('Points2Surf is reconstructing {} into {}'.format(out_dir, res_dir_rec))
+    #     recon_params = [
+    #                    '--indir', in_dir_test,
+    #                    '--outdir', out_dir,
+    #                    '--dataset', test_set,
+    #                    '--query_grid_resolution', str(grid_resolution),
+    #                    '--reconstruction', str(True),
+    #                    '--models', model_name,
+    #                    '--batchSize', str(batch_size),
+    #                    '--workers', str(workers),
+    #                    '--cache_capacity', str(5),
+    #                    '--epsilon', str(rec_epsilon),
+    #                    ]
+    #     recon_opt = points_to_surf_eval.parse_arguments(recon_params)
+    #     points_to_surf_eval.points_to_surf_eval(recon_opt)
+    #
+    #     # reconstruct meshes from predicted SDFs
+    #     imp_surf_dist_ms_dir = os.path.join(res_dir_rec, 'dist_ms')
+    #     query_pts_ms_dir = os.path.join(res_dir_rec, 'query_pts_ms')
+    #     vol_out_dir = os.path.join(res_dir_rec, 'vol')
+    #     mesh_out_dir = os.path.join(res_dir_rec, 'mesh')
+    #     sdf.implicit_surface_to_mesh_directory(
+    #         imp_surf_dist_ms_dir, query_pts_ms_dir,
+    #         vol_out_dir, mesh_out_dir,
+    #         grid_resolution, sigma, certainty_threshold,
+    #         workers)
+    #
+    #     # get Hausdorff distance for reconstructed meshes
+    #     new_meshes_dir_abs = os.path.join(res_dir_rec, 'mesh')
+    #     ref_meshes_dir_abs = os.path.join(in_dir_test, '03_meshes')
+    #     csv_file = os.path.join(res_dir_rec, 'hausdorff_dist_pred_rec.csv')
+    #     evaluation.mesh_comparison(
+    #         new_meshes_dir_abs=new_meshes_dir_abs,
+    #         ref_meshes_dir_abs=ref_meshes_dir_abs,
+    #         num_processes=workers,
+    #         report_name=csv_file,
+    #         samples_per_model=10000,
+    #         dataset_file_abs=os.path.join(in_dir_test, test_set))
 
     print('Points2Surf is finished!')

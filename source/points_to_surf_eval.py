@@ -36,7 +36,7 @@ def parse_arguments(args=None):
                         help='names of trained models, can evaluate multiple models')
     parser.add_argument('--modelpostfix', type=str, default='_model.pth', help='model file postfix')
     parser.add_argument('--parampostfix', type=str, default='_params.pth', help='parameter file postfix')
-    parser.add_argument('--gpu_idx', type=int, default=0, help='set < 0 to use CPU')
+    parser.add_argument('--gpu_idx', type=int, default=1, help='set < 0 to use CPU')
 
     parser.add_argument('--sparse_patches', type=int, default=False,
                         help='evaluate on a sparse set of patches, given by a '
@@ -53,6 +53,8 @@ def parse_arguments(args=None):
                         help='number of points of the point cloud that are trained with each patch')
     parser.add_argument('--seed', type=int, default=40938661, help='manual seed')
     parser.add_argument('--batchSize', type=int, default=0, help='batch size, if 0 the training batch size is used')
+    parser.add_argument('--n_classes', type=int, default=1, help='number of classes')
+    parser.add_argument('--shapes_per_class', type=int, default=2, help='number of shapes per class')
     parser.add_argument('--workers', type=int, default=0,
                         help='number of data loading workers - 0 means same thread as main execution')
     parser.add_argument('--cache_capacity', type=int, default=100,
@@ -121,6 +123,8 @@ def make_dataset(train_opt, eval_opt):
         patch_radius=train_opt.patch_radius,
         epsilon=eval_opt.epsilon,  # not necessary for training
         uniform_subsample=train_opt.uniform_subsample if 'uniform_subsample' in train_opt else 0,
+        n_classes=eval_opt.n_classes,
+        shapes_per_class=eval_opt.shapes_per_class
     )
     return dataset
 
@@ -165,7 +169,8 @@ def make_regressor(train_opt, pred_dim, model_filename, device):
         shared_transformation=train_opt.shared_transformer,
     )
 
-    p2s_model.cuda(device=device)  # same order as in training
+    # p2s_model.cuda(device=device)  # same order as in training
+    p2s_model.to(device)
     # p2s_model = torch.nn.DataParallel(p2s_model)
     p2s_model.load_state_dict(torch.load(model_filename))
     p2s_model.eval()
@@ -297,113 +302,114 @@ def save_evaluation(datasampler, dataset, eval_opt, model_out_dir, output_ids, o
 
 def points_to_surf_eval(eval_opt):
 
-    models = eval_opt.models.split()
-    print(models)
+    model_name = eval_opt.models
 
     if eval_opt.seed < 0:
         eval_opt.seed = random.randint(1, 10000)
 
-    device = torch.device("cpu" if eval_opt.gpu_idx < 0 else "cuda:%d" % eval_opt.gpu_idx)
+    device = "cuda:"+str(eval_opt.gpu_idx)
 
-    for model_name in models:
 
-        print("Random Seed: %d" % eval_opt.seed)
-        random.seed(eval_opt.seed)
-        torch.manual_seed(eval_opt.seed)
+    print("Random Seed: %d" % eval_opt.seed)
+    random.seed(eval_opt.seed)
+    torch.manual_seed(eval_opt.seed)
 
-        model_filename = os.path.join(eval_opt.modeldir, model_name+eval_opt.modelpostfix)
-        param_filename = os.path.join(eval_opt.modeldir, model_name+eval_opt.parampostfix)
+    model_filename = os.path.join(eval_opt.modeldir, model_name+eval_opt.modelpostfix)
+    param_filename = os.path.join(eval_opt.modeldir, model_name+eval_opt.parampostfix)
 
-        # load model and training parameters
-        train_opt = torch.load(param_filename)
-        if not hasattr(train_opt, 'single_transformer'):
-            train_opt.single_transformer = 0
-        if not hasattr(train_opt, 'shared_transformer'):
-            train_opt.shared_transformation = False
+    # load model and training parameters
+    train_opt = torch.load(param_filename)
+    if not hasattr(train_opt, 'single_transformer'):
+        train_opt.single_transformer = 0
+    if not hasattr(train_opt, 'shared_transformer'):
+        train_opt.shared_transformation = False
 
-        output_ids = get_output_ids(train_opt)
-        
-        if eval_opt.batchSize == 0:
-            model_batch_size = train_opt.batchSize
-        else:
-            model_batch_size = eval_opt.batchSize
+    output_ids = get_output_ids(train_opt)
 
-        pred_dim, output_pred_ind = get_output_dimensions(train_opt)
-        
-        dataset = make_dataset(train_opt=train_opt, eval_opt=eval_opt)
-        datasampler = make_datasampler(eval_opt=eval_opt, dataset=dataset)
-        dataloader = make_dataloader(eval_opt=eval_opt, dataset=dataset, datasampler=datasampler,
-                                     model_batch_size=model_batch_size)
-        p2s_model = make_regressor(train_opt=train_opt, pred_dim=pred_dim, model_filename=model_filename, device=device)
+    if eval_opt.batchSize == 0:
+        model_batch_size = train_opt.batchSize
+    else:
+        model_batch_size = eval_opt.batchSize
 
-        shape_ind = 0
-        shape_patch_offset = 0
-        if eval_opt.sampling == 'full':
-            shape_patch_count = dataset.shape_patch_count[shape_ind]
-        elif eval_opt.sampling == 'sequential_shapes_random_patches':
-            shape_patch_count = min(eval_opt.patches_per_shape, dataset.shape_patch_count[shape_ind])
-        else:
-            raise ValueError('Unknown sampling strategy: %s'.format(eval_opt.sampling))
+    pred_dim, output_pred_ind = get_output_dimensions(train_opt)
 
-        shape_patch_values = torch.zeros(shape_patch_count, pred_dim,
-                                         dtype=torch.float32, device=device)
+    # here is where the validation dataset is made
+    dataset = make_dataset(train_opt=train_opt, eval_opt=eval_opt)
+    datasampler = make_datasampler(eval_opt=eval_opt, dataset=dataset)
+    dataloader = make_dataloader(eval_opt=eval_opt, dataset=dataset, datasampler=datasampler,
+                                 model_batch_size=model_batch_size)
+    p2s_model = make_regressor(train_opt=train_opt, pred_dim=pred_dim, model_filename=model_filename, device=device)
 
-        # append model name to output directory and create directory if necessary
-        if eval_opt.reconstruction:
-            model_out_dir = os.path.join(eval_opt.outdir, 'rec')
-        else:
-            model_out_dir = os.path.join(eval_opt.outdir, 'eval')
-        if not os.path.exists(model_out_dir):
-            os.makedirs(model_out_dir)
+    shape_ind = 0
+    shape_patch_offset = 0
+    if eval_opt.sampling == 'full':
+        shape_patch_count = dataset.shape_patch_count[shape_ind]
+    elif eval_opt.sampling == 'sequential_shapes_random_patches':
+        shape_patch_count = min(eval_opt.patches_per_shape, dataset.shape_patch_count[shape_ind])
+    else:
+        raise ValueError('Unknown sampling strategy: %s'.format(eval_opt.sampling))
 
-        print(f'evaluating {len(dataset)} patches')
-        for batch_data in tqdm(dataloader):
+    shape_patch_values = torch.zeros(shape_patch_count, pred_dim,
+                                     dtype=torch.float32, device=device)
 
-            # batch data to GPU
-            for key in batch_data.keys():
-                batch_data[key] = batch_data[key].cuda(non_blocking=True)
+    # append model name to output directory and create directory if necessary
+    if eval_opt.reconstruction:
+        model_out_dir = os.path.join(eval_opt.outdir, 'rec')
+    else:
+        model_out_dir = os.path.join(eval_opt.outdir, 'eval')
+    if not os.path.exists(model_out_dir):
+        os.makedirs(model_out_dir)
 
-            fixed_radius = train_opt.patch_radius > 0.0
-            patch_radius = train_opt.patch_radius
+    print(f'evaluating {len(dataset)} patches')
+    for batch_data in tqdm(dataloader):
 
-            if not fixed_radius:
-                patch_radius = batch_data['patch_radius_ms']
+        # batch data to GPU
+        for key in batch_data.keys():
+            # batch_data[key] = batch_data[key].cuda(non_blocking=True)
+            batch_data[key] = batch_data[key].to(device)
 
-            with torch.no_grad():
-                batch_pred = p2s_model(batch_data)
 
-            post_process(batch_pred, train_opt, output_ids, output_pred_ind, patch_radius, fixed_radius)
+        fixed_radius = train_opt.patch_radius > 0.0
+        patch_radius = train_opt.patch_radius
 
-            batch_offset = 0
-            while batch_offset < batch_pred.size(0):
+        if not fixed_radius:
+            patch_radius = batch_data['patch_radius_ms']
 
-                shape_patches_remaining = shape_patch_count-shape_patch_offset
-                batch_patches_remaining = batch_pred.size(0)-batch_offset
-                samples_remaining = min(shape_patches_remaining, batch_patches_remaining)
+        with torch.no_grad():
+            batch_pred = p2s_model(batch_data)
 
-                # append estimated patch properties batch to properties for the current shape
-                patch_properties = batch_pred[batch_offset:batch_offset+samples_remaining]
-                shape_patch_values[shape_patch_offset:shape_patch_offset+samples_remaining] = patch_properties
-            
-                batch_offset = batch_offset + samples_remaining
-                shape_patch_offset = shape_patch_offset + samples_remaining
+        post_process(batch_pred, train_opt, output_ids, output_pred_ind, patch_radius, fixed_radius)
 
-                if shape_patches_remaining <= batch_patches_remaining:
-                    save_evaluation(datasampler, dataset, eval_opt, model_out_dir, output_ids, output_pred_ind,
-                                    shape_ind, shape_patch_values, train_opt)
+        batch_offset = 0
+        while batch_offset < batch_pred.size(0):
 
-                    # start new shape
-                    if shape_ind + 1 < len(dataset.shape_names):
-                        shape_patch_offset = 0
-                        shape_ind = shape_ind + 1
-                        if eval_opt.sampling == 'full':
-                            shape_patch_count = dataset.shape_patch_count[shape_ind]
-                        elif eval_opt.sampling == 'sequential_shapes_random_patches':
-                            shape_patch_count = len(datasampler.shape_patch_inds[shape_ind])
-                        else:
-                            raise ValueError('Unknown sampling strategy: %s' % eval_opt.sampling)
-                        shape_patch_values = torch.zeros(shape_patch_count, pred_dim,
-                                                         dtype=torch.float32, device=device)
+            shape_patches_remaining = shape_patch_count-shape_patch_offset
+            batch_patches_remaining = batch_pred.size(0)-batch_offset
+            samples_remaining = min(shape_patches_remaining, batch_patches_remaining)
+
+            # append estimated patch properties batch to properties for the current shape
+            patch_properties = batch_pred[batch_offset:batch_offset+samples_remaining]
+            shape_patch_values[shape_patch_offset:shape_patch_offset+samples_remaining] = patch_properties
+
+            batch_offset = batch_offset + samples_remaining
+            shape_patch_offset = shape_patch_offset + samples_remaining
+
+            if shape_patches_remaining <= batch_patches_remaining:
+                save_evaluation(datasampler, dataset, eval_opt, model_out_dir, output_ids, output_pred_ind,
+                                shape_ind, shape_patch_values, train_opt)
+
+                # start new shape
+                if shape_ind + 1 < len(dataset.shape_names):
+                    shape_patch_offset = 0
+                    shape_ind = shape_ind + 1
+                    if eval_opt.sampling == 'full':
+                        shape_patch_count = dataset.shape_patch_count[shape_ind]
+                    elif eval_opt.sampling == 'sequential_shapes_random_patches':
+                        shape_patch_count = len(datasampler.shape_patch_inds[shape_ind])
+                    else:
+                        raise ValueError('Unknown sampling strategy: %s' % eval_opt.sampling)
+                    shape_patch_values = torch.zeros(shape_patch_count, pred_dim,
+                                                     dtype=torch.float32, device=device)
 
 
 if __name__ == '__main__':

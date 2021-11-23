@@ -1,4 +1,5 @@
 import numpy as np
+from source.libmesh import check_mesh_contains
 
 def compute_iou(occ1, occ2):
     ''' Computes the Intersection over Union (IoU) value for two sets of
@@ -29,3 +30,31 @@ def compute_iou(occ1, occ2):
     iou = (area_intersect / area_union)
 
     return iou
+
+
+def eval_mesh(gt_file, recon_mesh):
+
+    # print("gt_file: ",gt_file)
+
+    occ = np.load(gt_file)
+    occ_points = occ["points"]
+    gt_occ = occ["occupancies"]
+    gt_occ = np.unpackbits(gt_occ)[:occ_points.shape[0]]
+    gt_occ = gt_occ.astype(np.bool)
+
+    try:
+        recon_occ = check_mesh_contains(recon_mesh, occ_points)
+        # print("recon: ", recon_occ.shape)
+        # print("recon: ", recon_occ.dtype)
+        # print("gt: ", gt_occ.shape)
+        # print("gt: ", gt_occ.dtype)
+        return compute_iou(gt_occ, recon_occ)
+    except:
+        print("WARNING: Could not calculate IoU for mesh ", gt_file)
+        return 0.0
+
+
+
+
+
+

@@ -218,10 +218,7 @@ class PointcloudPatchDataset(data.Dataset):
                  cache_capacity=1, point_count_std=0.0,
                  pre_processed_patches=False, query_grid_resolution=None,
                  sub_sample_size=500, reconstruction=False, uniform_subsample=False,
-                 num_workers=1):
-
-        shapes_per_class = 1
-
+                 num_workers=1, n_classes=1, shapes_per_class=2):
 
         # initialize parameters
         self.root = root
@@ -266,6 +263,7 @@ class PointcloudPatchDataset(data.Dataset):
         temp = []
         self.shape_names = []
         classes = os.listdir(self.root)
+        classes = classes[:n_classes]
         # remove class x
         if 'x' in classes: classes.remove('x')
         for c in classes:
