@@ -32,7 +32,6 @@ if __name__ == '__main__':
 
     # workers = 22  # for strong training machine
     # workers = 7  # for typical PC
-    workers = 5  # for debugging
 
     # batch_size = 501  # ~7.5 GB memory on 4 2080 TI for 300 patch points + 1000 sub-sample points
     # batch_size = 3001  # ~10 GB memory on 4 2080 TI for 50 patch points + 200 sub-sample points
@@ -62,7 +61,6 @@ if __name__ == '__main__':
         '--nepoch', str(100),
         '--lr', str(0.01),
         '--debug', str(0),
-        '--workers', str(workers),
         '--batchSize', str(batch_size),
         '--points_per_patch', str(300),
         '--patches_per_shape', str(1000),

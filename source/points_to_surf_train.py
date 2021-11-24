@@ -23,6 +23,8 @@ from source import sdf_nn
 from source.base import evaluation
 from source import sdf
 
+import pandas as pd
+
 debug = False
 
 
@@ -73,8 +75,9 @@ def parse_arguments(args=None):
                         help='number of patches sampled from each shape in an epoch')
     parser.add_argument('--sub_sample_size', type=int, default=500,
                         help='number of points of the point cloud that are trained with each patch')
-    parser.add_argument('--workers', type=int, default=8,
-                        help='number of data loading workers - 0 means same thread as main execution')
+    parser.add_argument('--workers', type=int, default=0,
+                        help='number of data loading workers - 0 means same thread as main execution'
+                        'This has to be ZERO (not 1) for debugging. Otherwise debugging doesnt work')
     parser.add_argument('--cache_capacity', type=int, default=100,
                         help='Max. number of dataset elements (usually shapes) to hold in the cache at the same time.')
     parser.add_argument('--seed', type=int, default=3627473,
@@ -176,6 +179,7 @@ def points_to_surf_train(opt):
     opt.outdir = "/mnt/raphael/ModelNet10_out/p2s/conventional_debug"
 
     os.makedirs(os.path.join(opt.outdir,'model'),exist_ok=True)
+    os.makedirs(os.path.join(opt.outdir, "metrics"),exist_ok=True)
     log_dirname = os.path.join(opt.logdir, opt.name)
     params_filename = os.path.join(opt.outdir, 'model', '%s_params.pth' % opt.name)
     model_filename = os.path.join(opt.outdir,'model', '%s_model.pth' % opt.name)
@@ -416,10 +420,18 @@ def points_to_surf_train(opt):
 
     print_every = 100 # iterations
     val_every = 3 # epochs
+    mean_iou = 0.0
     best_iou = 0.0
     best_epoch = 0
 
+
     # make an empty results file
+
+    # create the results df
+    cols = ['iteration', 'epoch',
+               'train_loss_cl', 'train_loss_reg', 'train_loss_total',
+                'test_current_iou', 'test_best_iou']
+    results_df = pd.DataFrame(columns=cols)
 
     for epoch in range(start_epoch, opt.nepoch, 1):
 
@@ -431,6 +443,7 @@ def points_to_surf_train(opt):
         time = time.strftime("[%H:%M:%S]")
         print(time)
         for train_batchind, batch_data_train in enumerate(train_dataloader):
+            row = dict.fromkeys(list(results_df.columns))
 
             # batch data to GPU
             for key in batch_data_train.keys():
@@ -451,8 +464,18 @@ def points_to_surf_train(opt):
                 output_loss_weights=output_loss_weights,
                 fixed_radius=opt.patch_radius > 0.0
             )
-                
+
+            row["iteration"] = epoch * train_batchind + train_batchind
+            row["epoch"] = epoch
+            row["train_loss_cl"] = loss_train[1].item()
+            row["train_loss_reg"] = loss_train[0].item()
+            row["train_loss_total"] = loss_train[0].item()+loss_train[1].item()
+            row["test_current_iou"] = mean_iou
+            row["test_best_iou"] = best_iou
+
+
             loss_total = sum(loss_train)
+
 
             # back-propagate through entire network to compute gradients of loss w.r.t. parameters
             loss_total.backward()
@@ -465,6 +488,12 @@ def points_to_surf_train(opt):
             metrics_dict = calc_metrics(outputs=opt.outputs, pred=pred_train, gt_data=batch_data_train)
 
             if(train_batchind % print_every == 0):
+
+                ### write results to file
+                results_df = results_df.append(row, ignore_index=True)
+                results_file = os.path.join(opt.outdir,"metrics","results_"+str(epoch)+".csv")
+                results_df.to_csv(results_file, index=False)
+
                 do_logging(writer=log_writer, log_prefix=green('train'), epoch=epoch, opt=opt, loss=loss_train,
                            batchind=train_batchind, fraction_done=train_fraction_done, num_batch=train_num_batch,
                            train=True, output_names=output_names, metrics_dict=metrics_dict)
@@ -530,7 +559,6 @@ def points_to_surf_train(opt):
             # this defines the voxel neighborhood around input points for which inference is run. Thus the higher, the more inference points
             # points outside this are classified by the sign propagation
             rec_epsilon = 3
-            workers = 5
 
 
             res_dir_rec = os.path.join(opt.outdir, 'rec')
@@ -546,7 +574,7 @@ def points_to_surf_train(opt):
                 '--reconstruction', str(True),
                 '--models', 'vanilla',
                 '--batchSize', str(batch_size),
-                '--workers', str(workers),
+                '--workers', str(opt.workers),
                 '--cache_capacity', str(5),
                 '--epsilon', str(rec_epsilon),
                 '--n_classes', str(n_classes),
@@ -567,7 +595,7 @@ def points_to_surf_train(opt):
                 imp_surf_dist_ms_dir, query_pts_ms_dir,
                 vol_out_dir, mesh_out_dir,
                 grid_resolution, sigma, certainty_threshold,
-                workers)
+                opt.workers)
 
             if(mean_iou > best_iou):
                 best_iou = mean_iou

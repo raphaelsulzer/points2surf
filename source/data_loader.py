@@ -7,21 +7,24 @@ import numpy as np
 import scipy.spatial as spatial
 import trimesh
 
-from source.base import mesh_io
 from source.base import utils
-from source.base import file_utils
 from source import sdf
 
 
 
-def sensor_information(point_filename):
+def add_sensor_information(point_filename):
 
     data_dict = {}
 
 
 
     # get the points
-
+    data = np.load(point_filename)
+    data_dict["points"] = data["points"]
+    data_dict["normals"] = data["normals"]
+    data_dict["sensor_pos"] = data["sensors"]
+    data_dict["sensor_vec"] = data_dict["sensor_pos"] - data_dict["points"]
+    data_dict["sensor_vec_norm"] = data_dict["sensor_vec"] / np.linalg.norm(data_dict["sensor_vec"], axis=1)[:, np.newaxis]
 
 
     # get the sensor info
@@ -29,7 +32,7 @@ def sensor_information(point_filename):
 
 
     # make the auxiliary points
-    
+
 
 
 
@@ -54,10 +57,13 @@ def load_shape(point_filename, imp_surf_query_filename, imp_surf_dist_filename,
     :return:
     """
 
-    mmap_mode = None
     # mmap_mode = 'r'
 
-    pts_np = np.load(point_filename, mmap_mode=mmap_mode)['points']
+    data_dict = add_sensor_information(point_filename)
+
+    pts_np = data_dict['points']
+
+
     if pts_np.shape[1] > 3:
         pts_np = pts_np[:, 0:3]
     if pts_np.dtype != np.float32:
@@ -70,7 +76,7 @@ def load_shape(point_filename, imp_surf_query_filename, imp_surf_dist_filename,
     kdtree = spatial.cKDTree(pts_np, leaf_size)
 
     if imp_surf_dist_filename is not None:
-        imp_surf_dist_ms = np.load(imp_surf_dist_filename, mmap_mode=mmap_mode)
+        imp_surf_dist_ms = np.load(imp_surf_dist_filename)
         if imp_surf_dist_ms.dtype != np.float32:
             print('Warning: imp_surf_dist_ms must be converted to float32')
             imp_surf_dist_ms = imp_surf_dist_ms.astype(np.float32)
@@ -78,7 +84,7 @@ def load_shape(point_filename, imp_surf_query_filename, imp_surf_dist_filename,
         imp_surf_dist_ms = None
 
     if imp_surf_query_filename is not None:
-        imp_surf_query_point_ms = np.load(imp_surf_query_filename, mmap_mode=mmap_mode)
+        imp_surf_query_point_ms = np.load(imp_surf_query_filename)
         if imp_surf_query_point_ms.dtype != np.float32:
             print('Warning: imp_surf_query_point_ms must be converted to float32')
             imp_surf_query_point_ms = imp_surf_query_point_ms.astype(np.float32)
