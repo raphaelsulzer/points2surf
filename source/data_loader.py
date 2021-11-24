@@ -13,6 +13,34 @@ from source.base import file_utils
 from source import sdf
 
 
+
+def sensor_information(point_filename):
+
+    data_dict = {}
+
+
+
+    # get the points
+
+
+
+    # get the sensor info
+
+
+
+    # make the auxiliary points
+    
+
+
+
+
+
+
+    return data_dict
+
+
+
+
 def load_shape(point_filename, imp_surf_query_filename, imp_surf_dist_filename,
                query_grid_resolution=None, epsilon=None):
     """

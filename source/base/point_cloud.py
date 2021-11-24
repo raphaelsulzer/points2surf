@@ -170,6 +170,8 @@ def get_patch_kdtree(
         kdtree: spatial.cKDTree, rng: np.random.RandomState,
         query_point, patch_radius, points_per_patch, n_jobs):
 
+    # MINE: this is where the patch points are actually found, as nearest neighbor to a query point
+
     if patch_radius <= 0.0:
         pts_dists_ms, patch_pts_ids = kdtree.query(x=query_point, k=points_per_patch, n_jobs=n_jobs)
     else:

@@ -187,6 +187,7 @@ class PointNetfeat(nn.Module):
             trans_quat = None
 
         # mlp (64,64)
+
         x = F.relu(self.bn0a(self.conv0a(x)))
         x = F.relu(self.bn0b(self.conv0b(x)))
 
@@ -299,6 +300,9 @@ class PointsToSurfModel(nn.Module):  # basing on PointNetDenseCls
         shape_features = x['pts_sub_sample_ms'].transpose(1, 2)
         shape_query_point = x['imp_surf_query_point_ms'].unsqueeze(2)
 
+        # print(patch_features.shape)
+        # print(shape_features.shape)
+
         # move global points to query point so that both local and global information are centered at the query point
         shape_features -= shape_query_point.expand(shape_features.shape)
 
@@ -317,33 +321,35 @@ class PointsToSurfModel(nn.Module):  # basing on PointNetDenseCls
         #         file_path=out_file)
         #     print('wrote training sample to {}'.format(out_file))
 
-        if self.single_transformer:
-            local_global_features = torch.cat((patch_features,  shape_features), dim=2)
-            local_global_features_transformed, _, _, _ = self.feat_local_global(local_global_features)
-            patch_features = F.relu(self.bn1_local_global(self.fc1_local_global(local_global_features_transformed)))
-        else:
-            if self.use_point_stn and self.shared_transformation:
-                feats = torch.cat((patch_features,  shape_features), dim=2)
-                trans, trans_quat = self.point_stn(feats[:, :3, :])
-                shape_features_transformed = torch.bmm(trans, shape_features[:, :3, :])
-                patch_features_transformed = torch.bmm(trans, patch_features[:, :3, :])
-                shape_features = torch.cat([shape_features_transformed, shape_features[:, 3:, :]], dim=1)
-                patch_features = torch.cat([patch_features_transformed, patch_features[:, 3:, :]], dim=1)
+        # if self.single_transformer:
+        #     local_global_features = torch.cat((patch_features,  shape_features), dim=2)
+        #     local_global_features_transformed, _, _, _ = self.feat_local_global(local_global_features)
+        #     patch_features = F.relu(self.bn1_local_global(self.fc1_local_global(local_global_features_transformed)))
+        # else:
+        #     if self.use_point_stn and self.shared_transformation:
+        #         feats = torch.cat((patch_features,  shape_features), dim=2)
+        #         trans, trans_quat = self.point_stn(feats[:, :3, :])
+        #         shape_features_transformed = torch.bmm(trans, shape_features[:, :3, :])
+        #         patch_features_transformed = torch.bmm(trans, patch_features[:, :3, :])
+        #         shape_features = torch.cat([shape_features_transformed, shape_features[:, 3:, :]], dim=1)
+        #         patch_features = torch.cat([patch_features_transformed, patch_features[:, 3:, :]], dim=1)
 
-            shape_features, trans_global_pts, _, _ = \
-                self.feat_global(shape_features)
-            shape_features = F.relu(self.bn1_global(self.fc1_global(shape_features)))
+        shape_features, trans_global_pts, _, _ = \
+            self.feat_global(shape_features)
+        shape_features = F.relu(self.bn1_global(self.fc1_global(shape_features)))
 
-            if self.use_point_stn and not self.shared_transformation:
-                # rotate patch-space points like the subsample
-                patch_features = torch.bmm(trans_global_pts, patch_features)
+        if self.use_point_stn and not self.shared_transformation:
+            # rotate patch-space points like the subsample
+            patch_features = torch.bmm(trans_global_pts, patch_features)
 
-            patch_features, _, _, _ = \
-                self.feat_local(patch_features)
-            patch_features = F.relu(self.bn1_local(self.fc1_local(patch_features)))
+        patch_features, _, _, _ = \
+            self.feat_local(patch_features)
+        patch_features = F.relu(self.bn1_local(self.fc1_local(patch_features)))
 
-            # rotate query points like the patch
-            patch_features = torch.cat((patch_features,  shape_features), dim=1)
+
+
+        # rotate query points like the patch
+        patch_features = torch.cat((patch_features,  shape_features), dim=1)
 
         patch_features = F.relu(self.bn2(self.fc2(patch_features)))
         patch_features = F.relu(self.bn3(self.fc3(patch_features)))

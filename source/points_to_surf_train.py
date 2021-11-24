@@ -2,7 +2,7 @@ from __future__ import print_function
 
 import argparse
 import os
-import sys
+from datetime import datetime
 import random
 import math
 import shutil
@@ -309,8 +309,8 @@ def points_to_surf_train(opt):
         patch_radius=opt.patch_radius,
         epsilon=-1,  # not necessary for training
         uniform_subsample=opt.uniform_subsample,
-        n_classes=10,
-        shapes_per_class=2
+        n_classes=1,
+        shapes_per_class=3
     )
     if opt.training_order == 'random':
         train_datasampler = data_loader.RandomPointcloudPatchSampler(
@@ -418,12 +418,18 @@ def points_to_surf_train(opt):
     val_every = 3 # epochs
     best_iou = 0.0
     best_epoch = 0
+
+    # make an empty results file
+
     for epoch in range(start_epoch, opt.nepoch, 1):
 
         # test_batchind = -1
         # test_fraction_done = 10000.0
         # test_enum = enumerate(test_dataloader, 0)
-
+        # print the time
+        time = datetime.now()
+        time = time.strftime("[%H:%M:%S]")
+        print(time)
         for train_batchind, batch_data_train in enumerate(train_dataloader):
 
             # batch data to GPU
@@ -515,8 +521,8 @@ def points_to_surf_train(opt):
 
         if(epoch % val_every == 0 and epoch != 0):
             # MINE: reconstruct test shapes using current model
-            n_classes = 2
-            shapes_per_class = 2
+            n_classes = 1
+            shapes_per_class = 3
             batch_size = 1000  # ~7 GB memory on 1 1070 for 300 patch points + 1000 sub-sample points
 
             # grid_resolution = 256  # quality like in the paper
@@ -524,7 +530,7 @@ def points_to_surf_train(opt):
             # this defines the voxel neighborhood around input points for which inference is run. Thus the higher, the more inference points
             # points outside this are classified by the sign propagation
             rec_epsilon = 3
-            workers = 4
+            workers = 5
 
 
             res_dir_rec = os.path.join(opt.outdir, 'rec')
