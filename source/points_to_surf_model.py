@@ -6,7 +6,6 @@ import torch.nn.functional as F
 
 from source.base import utils
 
-input_dims_per_point = 3
 
 
 class STN(nn.Module):
@@ -132,10 +131,11 @@ class QSTN(nn.Module):
 
 
 class PointNetfeat(nn.Module):
-    def __init__(self, net_size_max=1024, num_scales=1, num_points=500, use_point_stn=True, use_feat_stn=True,
+    def __init__(self, input_dim=3,net_size_max=1024, num_scales=1, num_points=500, use_point_stn=True, use_feat_stn=True,
                  output_size=100, sym_op='max'):
         super(PointNetfeat, self).__init__()
 
+        self.input_dim=input_dim
         self.net_size_max = net_size_max
         self.num_points = num_points
         self.num_scales = num_scales
@@ -152,7 +152,7 @@ class PointNetfeat(nn.Module):
             self.stn2 = STN(net_size_max=net_size_max, num_scales=self.num_scales,
                             num_points=num_points, dim=64, sym_op=self.sym_op)
 
-        self.conv0a = torch.nn.Conv1d(input_dims_per_point, 64, 1)
+        self.conv0a = torch.nn.Conv1d(self.input_dim, 64, 1)
         self.conv0b = torch.nn.Conv1d(64, 64, 1)
         self.bn0a = nn.BatchNorm1d(64)
         self.bn0b = nn.BatchNorm1d(64)
@@ -238,7 +238,8 @@ class PointNetfeat(nn.Module):
 class PointsToSurfModel(nn.Module):  # basing on PointNetDenseCls
     def __init__(self, net_size_max=1024, num_points=500, output_dim=3, use_point_stn=True, use_feat_stn=True,
                  sym_op='max', use_query_point=False,
-                 sub_sample_size=500, do_augmentation=True, single_transformer=False, shared_transformation=False):
+                 sub_sample_size=500, do_augmentation=True, single_transformer=False, shared_transformation=False,
+                 input_dim=3,sensor=None):
         super(PointsToSurfModel, self).__init__()
 
         self.net_size_max = net_size_max
@@ -250,9 +251,12 @@ class PointsToSurfModel(nn.Module):  # basing on PointNetDenseCls
         self.do_augmentation = do_augmentation
         self.single_transformer = bool(single_transformer)
         self.shared_transformation = shared_transformation
+        self.input_dim = input_dim
+        self.sensor = sensor
 
         if self.single_transformer:
             self.feat_local_global = PointNetfeat(
+                input_dim=input_dim,
                 net_size_max=net_size_max,
                 num_points=self.num_points + self.sub_sample_size,
                 num_scales=1,
@@ -268,6 +272,7 @@ class PointsToSurfModel(nn.Module):  # basing on PointNetDenseCls
                                       num_points=self.num_points+self.sub_sample_size, dim=3, sym_op=sym_op)
 
             self.feat_local = PointNetfeat(
+                input_dim=input_dim,
                 net_size_max=net_size_max,
                 num_points=self.num_points,
                 num_scales=1,
@@ -276,6 +281,7 @@ class PointsToSurfModel(nn.Module):  # basing on PointNetDenseCls
                 output_size=self.net_size_max,
                 sym_op=sym_op)
             self.feat_global = PointNetfeat(
+                input_dim=input_dim,
                 net_size_max=net_size_max,
                 num_points=self.sub_sample_size,
                 num_scales=1,
@@ -296,15 +302,21 @@ class PointsToSurfModel(nn.Module):  # basing on PointNetDenseCls
 
     def forward(self, x):
 
-        patch_features = x['patch_pts_ps'].transpose(1, 2)
-        shape_features = x['pts_sub_sample_ms'].transpose(1, 2)
-        shape_query_point = x['imp_surf_query_point_ms'].unsqueeze(2)
 
-        # print(patch_features.shape)
-        # print(shape_features.shape)
+        if(self.sensor):
+            patch_pts = x['patch_inputs_ps'].transpose(1, 2)
+            shape_pts = x['inputs_sub_sample_ms'].transpose(1, 2)
+            shape_query_point = x['imp_surf_query_point_ms'].unsqueeze(2)
+        else:
+            patch_pts = x['patch_pts_ps'].transpose(1, 2)
+            shape_pts = x['pts_sub_sample_ms'].transpose(1, 2)
+            shape_query_point = x['imp_surf_query_point_ms'].unsqueeze(2)
+
 
         # move global points to query point so that both local and global information are centered at the query point
-        shape_features -= shape_query_point.expand(shape_features.shape)
+        shape_pts[:,:3,:] -= shape_query_point.expand(shape_pts[:,:3,:].shape)
+        # move only the points, not the sensors
+
 
         # # debug output for a single patch with its sub-sample
         # if True:
@@ -334,25 +346,27 @@ class PointsToSurfModel(nn.Module):  # basing on PointNetDenseCls
         #         shape_features = torch.cat([shape_features_transformed, shape_features[:, 3:, :]], dim=1)
         #         patch_features = torch.cat([patch_features_transformed, patch_features[:, 3:, :]], dim=1)
 
-        shape_features, trans_global_pts, _, _ = \
-            self.feat_global(shape_features)
-        shape_features = F.relu(self.bn1_global(self.fc1_global(shape_features)))
+        shape_pts, trans_global_pts, _, _ = \
+            self.feat_global(shape_pts) # this is a PointNet
+        shape_pts = F.relu(self.bn1_global(self.fc1_global(shape_pts)))
 
         if self.use_point_stn and not self.shared_transformation:
             # rotate patch-space points like the subsample
-            patch_features = torch.bmm(trans_global_pts, patch_features)
+            x_transformed = torch.bmm(trans_global_pts, patch_pts[:, :3, :])  # transform only point data
+            patch_pts = torch.cat((x_transformed, patch_pts[:, 3:, :]), dim=1)
+            #patch_pts = torch.bmm(trans_global_pts, patch_pts)
 
-        patch_features, _, _, _ = \
-            self.feat_local(patch_features)
-        patch_features = F.relu(self.bn1_local(self.fc1_local(patch_features)))
+        patch_pts, _, _, _ = \
+            self.feat_local(patch_pts) # this is a PointNet
+        patch_pts = F.relu(self.bn1_local(self.fc1_local(patch_pts)))
 
 
 
         # rotate query points like the patch
-        patch_features = torch.cat((patch_features,  shape_features), dim=1)
+        patch_pts = torch.cat((patch_pts,  shape_pts), dim=1)
 
-        patch_features = F.relu(self.bn2(self.fc2(patch_features)))
-        patch_features = F.relu(self.bn3(self.fc3(patch_features)))
-        patch_features = self.fc4(patch_features)
+        patch_pts = F.relu(self.bn2(self.fc2(patch_pts)))
+        patch_pts = F.relu(self.bn3(self.fc3(patch_pts)))
+        patch_pts = self.fc4(patch_pts)
 
-        return patch_features
+        return patch_pts

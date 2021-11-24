@@ -1,5 +1,5 @@
 import numpy as np
-import os
+import os, sys
 
 from source.base import utils_mp
 from source.base import file_utils
@@ -217,8 +217,11 @@ def get_point_cloud_sub_sample(sub_sample_size, pts_ms, query_point_ms, uniform=
         pts_sub_sample_ms = pts_ms[sub_sample_ids, :]
     # if not enough take shuffled point cloud and fill with zeros
     else:
-        pts_shuffled = pts_ms[:, :3]
-        np.random.shuffle(pts_shuffled)
-        zeros_padding = np.zeros((sub_sample_size - pts_ms.shape[0], 3), dtype=np.float32)
-        pts_sub_sample_ms = np.concatenate((pts_shuffled, zeros_padding), axis=0)
-    return pts_sub_sample_ms
+        ### there are no ids here, so for simplicity just do not allow point clouds with size < global subsample size
+        print("ERROR: cannot treat point cloud with size < subsample_size")
+        sys.exit(1)
+        # pts_shuffled = pts_ms[:, :3]
+        # np.random.shuffle(pts_shuffled)
+        # zeros_padding = np.zeros((sub_sample_size - pts_ms.shape[0], 3), dtype=np.float32)
+        # pts_sub_sample_ms = np.concatenate((pts_shuffled, zeros_padding), axis=0)
+    return pts_sub_sample_ms, sub_sample_ids

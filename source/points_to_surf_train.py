@@ -167,6 +167,25 @@ def do_logging(writer, log_prefix, epoch, opt, loss,
 
 def points_to_surf_train(opt):
 
+    debug = True
+    if(debug):
+        opt.workers = 0
+        n_classes_train = 1
+        shapes_per_class_train = 3
+        n_classes_test = 1
+        shapes_per_class_test = 3
+        opt.outdir = "/mnt/raphael/ModelNet10_out/p2s/conventional_debug"
+    else:
+        opt.workers = 3
+        n_classes_train = 10
+        shapes_per_class_train = 30
+        n_classes_test = 10
+        shapes_per_class_test = 3
+        opt.outdir = "/mnt/raphael/ModelNet10_out/p2s/conventional_debug"
+
+    opt.input_dim = 6
+    opt.sensor = "vec"
+
     # device = torch.device("cpu" if opt.gpu_idx < 0 else "cuda:%d" % opt.gpu_idx)
     # print('Training on {} GPUs'.format(torch.cuda.device_count()))
     # print('Training on ' + ('cpu' if opt.gpu_idx < 0 else torch.cuda.get_device_name(opt.gpu_idx)))
@@ -176,7 +195,6 @@ def points_to_surf_train(opt):
     green = lambda x: '\033[92m' + x + '\033[0m'
     blue = lambda x: '\033[94m' + x + '\033[0m'
 
-    opt.outdir = "/mnt/raphael/ModelNet10_out/p2s/conventional_debug"
 
     os.makedirs(os.path.join(opt.outdir,'model'),exist_ok=True)
     os.makedirs(os.path.join(opt.outdir, "metrics"),exist_ok=True)
@@ -268,6 +286,8 @@ def points_to_surf_train(opt):
         do_augmentation=True,
         single_transformer=opt.single_transformer,
         shared_transformation=opt.shared_transformer,
+        input_dim = opt.input_dim,
+        sensor=opt.sensor
     )
 
     start_epoch = 0
@@ -602,9 +622,9 @@ def points_to_surf_train(opt):
                 best_epoch = epoch
                 torch.save(p2s_model.state_dict(), model_filename[:-4] + "_best.pth")
 
-            print("################################################")
+            print("########################################################")
             print("Mean IoU {} | Best IoU {} at epoch {}".format(mean_iou,best_iou,best_epoch))
-            print("################################################")
+            print("########################################################")
 
 
 

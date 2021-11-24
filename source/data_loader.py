@@ -12,31 +12,22 @@ from source import sdf
 
 
 
-def add_sensor_information(point_filename):
+def load_points_and_sensor_information(point_filename):
 
     data_dict = {}
 
-
-
     # get the points
     data = np.load(point_filename)
-    data_dict["points"] = data["points"]
-    data_dict["normals"] = data["normals"]
-    data_dict["sensor_pos"] = data["sensors"]
-    data_dict["sensor_vec"] = data_dict["sensor_pos"] - data_dict["points"]
-    data_dict["sensor_vec_norm"] = data_dict["sensor_vec"] / np.linalg.norm(data_dict["sensor_vec"], axis=1)[:, np.newaxis]
+    data_dict["points"] = data["points"].astype(np.float32)
+    data_dict["normals"] = data["normals"].astype(np.float32)
+    data_dict["sensor_pos"] = data["sensors"].astype(np.float32)
 
-
-    # get the sensor info
-
+    ### shouldn't do that here, because there are transformations applied to the points, so I should create the vectors after the transformation?!
+    # data_dict["sensor_vec"] = (data_dict["sensor_pos"] - data_dict["points"]).astype(np.float32)
+    # data_dict["sensor_vec_norm"] = data_dict["sensor_vec"] / np.linalg.norm(data_dict["sensor_vec"], axis=1)[:, np.newaxis]
 
 
     # make the auxiliary points
-
-
-
-
-
 
 
     return data_dict
@@ -59,16 +50,9 @@ def load_shape(point_filename, imp_surf_query_filename, imp_surf_dist_filename,
 
     # mmap_mode = 'r'
 
-    data_dict = add_sensor_information(point_filename)
+    data_dict = load_points_and_sensor_information(point_filename)
 
     pts_np = data_dict['points']
-
-
-    if pts_np.shape[1] > 3:
-        pts_np = pts_np[:, 0:3]
-    if pts_np.dtype != np.float32:
-        print('Warning: pts_np must be converted to float32: {}'.format(point_filename))
-        pts_np = pts_np.astype(np.float32)
 
     # otherwise KDTree construction may run out of recursions
     leaf_size = 1000
@@ -97,7 +81,7 @@ def load_shape(point_filename, imp_surf_query_filename, imp_surf_dist_filename,
     else:
         imp_surf_query_point_ms = None
 
-    return Shape(
+    return Shape(data=data_dict,
         pts=pts_np, kdtree=kdtree,
         imp_surf_query_point_ms=imp_surf_query_point_ms, imp_surf_dist_ms=imp_surf_dist_ms)
 
@@ -209,8 +193,9 @@ class RandomPointcloudPatchSampler(data.sampler.Sampler):
 
 
 class Shape:
-    def __init__(self, pts, kdtree,
+    def __init__(self, data, pts, kdtree,
                  imp_surf_query_point_ms, imp_surf_dist_ms):
+        self.data = data
         self.pts = pts
         self.kdtree = kdtree
         self.imp_surf_query_point_ms = imp_surf_query_point_ms
@@ -395,6 +380,7 @@ class PointcloudPatchDataset(data.Dataset):
 
             return patch_pts_ids, pts_patch_ps, pts_patch_ms, patch_radius_ms
 
+        # MINE: they actually load the shape (although from some kind of cache) for each query point again
         shape = self.shape_cache.get(shape_ind)
         imp_surf_query_point_ms = shape.imp_surf_query_point_ms[patch_ind]
 
@@ -404,6 +390,8 @@ class PointcloudPatchDataset(data.Dataset):
             get_patch_points(shape=shape, query_point=imp_surf_query_point_ms)
         imp_surf_query_point_ps = utils.model_space_to_patch_space_single_point(
             imp_surf_query_point_ms, imp_surf_query_point_ms, patch_radius_ms)
+
+
 
         # surf dist can be None because we have no ground truth for evaluation
         # need a number or Pytorch will complain when assembling the batch
@@ -416,7 +404,7 @@ class PointcloudPatchDataset(data.Dataset):
             imp_surf_dist_sign_ms = 0.0 if imp_surf_dist_sign_ms < 0.0 else 1.0
 
         if self.sub_sample_size > 0:
-            pts_sub_sample_ms = utils.get_point_cloud_sub_sample(
+            pts_sub_sample_ms, ids_sub_sample_ms = utils.get_point_cloud_sub_sample(
                 sub_sample_size=self.sub_sample_size, pts_ms=shape.pts,
                 query_point_ms=imp_surf_query_point_ms, uniform=self.uniform_subsample)
         else:
@@ -446,6 +434,17 @@ class PointcloudPatchDataset(data.Dataset):
         patch_data['imp_surf_ms'] = np.array([imp_surf_dist_ms], dtype=np.float32)
         patch_data['imp_surf_magnitude_ms'] = np.array([np.abs(imp_surf_dist_ms)], dtype=np.float32)
         patch_data['imp_surf_dist_sign_ms'] = np.array([imp_surf_dist_sign_ms], dtype=np.float32)
+        # sensor
+        # patch_data['patch_sensors_ps'] = shape.data["sensor_pos"][patch_pts_ids]
+        # patch_data['sensors_sub_sample_ms'] = shape.data["sensor_pos"][ids_sub_sample_ms]
+        ### sensor_vec_norm, even here it might not be good to create, since points are later multiplied with STN (spatial transformed network)
+        patch_data['patch_sensors_ps'] = shape.data["sensor_pos"][patch_pts_ids]-patch_pts_ps
+        patch_data['patch_sensors_ps'] = patch_data['patch_sensors_ps'] / np.linalg.norm(patch_data['patch_sensors_ps'], axis=1)[:, np.newaxis]
+        patch_data['sensors_sub_sample_ms'] = shape.data["sensor_pos"][ids_sub_sample_ms] - pts_sub_sample_ms
+        patch_data['sensors_sub_sample_ms'] = patch_data['sensors_sub_sample_ms'] / np.linalg.norm(patch_data['sensors_sub_sample_ms'], axis=1)[:, np.newaxis]
+
+        patch_data['patch_inputs_ps'] = np.concatenate((patch_data['patch_pts_ps'],patch_data['patch_sensors_ps']),axis=1)
+        patch_data['inputs_sub_sample_ms'] = np.concatenate((patch_data['pts_sub_sample_ms'],patch_data['sensors_sub_sample_ms']),axis=1)
 
         # un-comment to get a debug output of a training sample
         # import evaluation

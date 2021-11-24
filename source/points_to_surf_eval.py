@@ -167,6 +167,8 @@ def make_regressor(train_opt, pred_dim, model_filename, device):
         do_augmentation=False,
         single_transformer=train_opt.single_transformer,
         shared_transformation=train_opt.shared_transformer,
+        input_dim=train_opt.input_dim,
+        sensor=train_opt.sensor
     )
 
     # p2s_model.cuda(device=device)  # same order as in training
