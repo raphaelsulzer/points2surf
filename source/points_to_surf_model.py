@@ -303,14 +303,10 @@ class PointsToSurfModel(nn.Module):  # basing on PointNetDenseCls
     def forward(self, x):
 
 
-        if(self.sensor):
-            patch_pts = x['patch_inputs_ps'].transpose(1, 2)
-            shape_pts = x['inputs_sub_sample_ms'].transpose(1, 2)
-            shape_query_point = x['imp_surf_query_point_ms'].unsqueeze(2)
-        else:
-            patch_pts = x['patch_pts_ps'].transpose(1, 2)
-            shape_pts = x['pts_sub_sample_ms'].transpose(1, 2)
-            shape_query_point = x['imp_surf_query_point_ms'].unsqueeze(2)
+        patch_pts = x['patch_inputs_ps'].transpose(1, 2)
+        shape_pts = x['inputs_sub_sample_ms'].transpose(1, 2)
+        shape_query_point = x['imp_surf_query_point_ms'].unsqueeze(2)
+
 
 
         # move global points to query point so that both local and global information are centered at the query point

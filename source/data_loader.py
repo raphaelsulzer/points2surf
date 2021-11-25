@@ -232,7 +232,7 @@ class Cache:
 
 class PointcloudPatchDataset(data.Dataset):
 
-    def __init__(self, root, scan, shape_list_filename, points_per_patch, patch_radius, patch_features, epsilon,
+    def __init__(self, opt, root, scan, shape_list_filename, points_per_patch, patch_radius, patch_features, epsilon,
                  seed=None, identical_epochs=False, center='point',
                  cache_capacity=1, point_count_std=0.0,
                  pre_processed_patches=False, query_grid_resolution=None,
@@ -240,6 +240,7 @@ class PointcloudPatchDataset(data.Dataset):
                  num_workers=1, n_classes=1, shapes_per_class=2):
 
         # initialize parameters
+        self.opt = opt
         self.root = root
         self.scan = scan
         self.shape_list_filename = shape_list_filename
@@ -347,7 +348,7 @@ class PointcloudPatchDataset(data.Dataset):
                 self.shape_patch_count.append(pts.shape[0])
 
     # returns a patch centered at the point with the given global index
-    # and the ground truth normal the the patch center
+    # and the ground truth normal at the patch center
     def __getitem__(self, index):
 
         # find shape that contains the point with given global index
@@ -426,25 +427,26 @@ class PointcloudPatchDataset(data.Dataset):
 
         patch_data = dict()
         # create new arrays to close the memory mapped files
-        patch_data['patch_pts_ps'] = patch_pts_ps
+
+        if(self.opt.sensor):
+            ### sensor_vec_norm, even here it might not be good to create, since points are later multiplied with STN (spatial transformed network)
+            patch_sensors_ps = shape.data["sensor_pos"][patch_pts_ids] - patch_pts_ps
+            patch_sensors_ps = patch_sensors_ps / np.linalg.norm(patch_sensors_ps, axis=1)[:, np.newaxis]
+            patch_data['patch_inputs_ps'] = np.concatenate((patch_pts_ps, patch_sensors_ps),axis=1)
+
+            sensors_sub_sample_ms = shape.data["sensor_pos"][ids_sub_sample_ms] - pts_sub_sample_ms
+            sensors_sub_sample_ms = sensors_sub_sample_ms / np.linalg.norm(sensors_sub_sample_ms, axis=1)[:, np.newaxis]
+            patch_data['inputs_sub_sample_ms'] = np.concatenate((pts_sub_sample_ms, sensors_sub_sample_ms), axis=1)
+        else:
+            patch_data['patch_inputs_ps'] = patch_pts_ps
+            patch_data['inputs_sub_sample_ms'] = pts_sub_sample_ms
+
         patch_data['patch_radius_ms'] = np.array(patch_radius_ms, dtype=np.float32)
-        patch_data['pts_sub_sample_ms'] = pts_sub_sample_ms
         patch_data['imp_surf_query_point_ms'] = imp_surf_query_point_ms
         patch_data['imp_surf_query_point_ps'] = np.array(imp_surf_query_point_ps)
         patch_data['imp_surf_ms'] = np.array([imp_surf_dist_ms], dtype=np.float32)
         patch_data['imp_surf_magnitude_ms'] = np.array([np.abs(imp_surf_dist_ms)], dtype=np.float32)
         patch_data['imp_surf_dist_sign_ms'] = np.array([imp_surf_dist_sign_ms], dtype=np.float32)
-        # sensor
-        # patch_data['patch_sensors_ps'] = shape.data["sensor_pos"][patch_pts_ids]
-        # patch_data['sensors_sub_sample_ms'] = shape.data["sensor_pos"][ids_sub_sample_ms]
-        ### sensor_vec_norm, even here it might not be good to create, since points are later multiplied with STN (spatial transformed network)
-        patch_data['patch_sensors_ps'] = shape.data["sensor_pos"][patch_pts_ids]-patch_pts_ps
-        patch_data['patch_sensors_ps'] = patch_data['patch_sensors_ps'] / np.linalg.norm(patch_data['patch_sensors_ps'], axis=1)[:, np.newaxis]
-        patch_data['sensors_sub_sample_ms'] = shape.data["sensor_pos"][ids_sub_sample_ms] - pts_sub_sample_ms
-        patch_data['sensors_sub_sample_ms'] = patch_data['sensors_sub_sample_ms'] / np.linalg.norm(patch_data['sensors_sub_sample_ms'], axis=1)[:, np.newaxis]
-
-        patch_data['patch_inputs_ps'] = np.concatenate((patch_data['patch_pts_ps'],patch_data['patch_sensors_ps']),axis=1)
-        patch_data['inputs_sub_sample_ms'] = np.concatenate((patch_data['pts_sub_sample_ms'],patch_data['sensors_sub_sample_ms']),axis=1)
 
         # un-comment to get a debug output of a training sample
         # import evaluation

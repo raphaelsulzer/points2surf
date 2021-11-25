@@ -107,6 +107,7 @@ def get_output_dimensions(train_opt):
 
 def make_dataset(train_opt, eval_opt):
     dataset = data_loader.PointcloudPatchDataset(
+        opt=train_opt,
         root=eval_opt.indir,
         shape_list_filename=eval_opt.dataset,
         scan='43',
@@ -316,8 +317,8 @@ def points_to_surf_eval(eval_opt):
     random.seed(eval_opt.seed)
     torch.manual_seed(eval_opt.seed)
 
-    model_filename = os.path.join(eval_opt.modeldir, model_name+eval_opt.modelpostfix)
-    param_filename = os.path.join(eval_opt.modeldir, model_name+eval_opt.parampostfix)
+    model_filename = os.path.join(eval_opt.outdir,'model', model_name+eval_opt.modelpostfix)
+    param_filename = os.path.join(eval_opt.outdir, 'model', model_name+eval_opt.parampostfix)
 
     # load model and training parameters
     train_opt = torch.load(param_filename)

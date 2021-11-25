@@ -12,8 +12,10 @@ from source.base import evaluation
 # see https://github.com/pytorch/pytorch/issues/2584
 # see https://forums.fast.ai/t/understanding-code-error-expected-more-than-1-value-per-channel-when-training/9257/12
 
-
 if __name__ == '__main__':
+
+
+
 
     model_name = 'vanilla'
     dataset = 'ModelNet10'
@@ -35,7 +37,7 @@ if __name__ == '__main__':
 
     # batch_size = 501  # ~7.5 GB memory on 4 2080 TI for 300 patch points + 1000 sub-sample points
     # batch_size = 3001  # ~10 GB memory on 4 2080 TI for 50 patch points + 200 sub-sample points
-    batch_size = 100  # ~7 GB memory on 1 1070 for 300 patch points + 1000 sub-sample points
+    # batch_size = 100  # ~7 GB memory on 1 1070 for 300 patch points + 1000 sub-sample points
 
     # grid_resolution = 256  # quality like in the paper
     grid_resolution = 128  # quality for a short test
@@ -61,18 +63,15 @@ if __name__ == '__main__':
         '--nepoch', str(100),
         '--lr', str(0.01),
         '--debug', str(0),
-        '--batchSize', str(batch_size),
         '--points_per_patch', str(300),
         '--patches_per_shape', str(1000),
         '--sub_sample_size', str(1000),
-        '--cache_capacity', str(10),
         '--patch_radius', str(patch_radius),
         '--single_transformer', str(single_transformer),
         '--shared_transformer', str(shared_transformer),
         '--patch_center', 'mean',
-        '--training_order', 'random_shape_consecutive',
-        '--use_point_stn', str(1),
-        '--uniform_subsample', str(0),
+        '--use_point_stn', str(0),
+        '--uniform_subsample', str(1),
         '--outputs',
     ]
     train_params += features
