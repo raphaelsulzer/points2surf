@@ -78,7 +78,7 @@ def parse_arguments(args=None):
     parser.add_argument('--workers', type=int, default=0,
                         help='number of data loading workers - 0 means same thread as main execution'
                         'This has to be ZERO (not 1) for debugging. Otherwise debugging doesnt work')
-    parser.add_argument('--cache_capacity', type=int, default=100,
+    parser.add_argument('--cache_capacity', type=int, default=1000,
                         help='Max. number of dataset elements (usually shapes) to hold in the cache at the same time.')
     parser.add_argument('--seed', type=int, default=3627473,
                         help='manual seed')
@@ -158,7 +158,7 @@ def do_logging(writer, log_prefix, epoch, opt, loss, current_step, batchind, num
     time = datetime.now()
     time = time.strftime("[%H:%M:%S]")
     state_string = \
-        '[{time}{name} {epoch}: {batch}/{n_batches}] {prefix} loss: {loss:+.2f}, rmse: {rmse:+.2f}, f1: {f1:+.2f}'.format(
+        '[{time} Epoch: {epoch}: {batch}/{n_batches}] {prefix} loss: {loss:+.2f}, rmse: {rmse:+.2f}, f1: {f1:+.2f}'.format(
             time=time, name=opt.name, epoch=epoch, batch=batchind, n_batches=num_batch - 1,
             prefix=log_prefix, loss=loss_sum,
             rmse=metrics_dict['abs_dist_rms'], f1=metrics_dict['f1_score'])
@@ -167,8 +167,7 @@ def do_logging(writer, log_prefix, epoch, opt, loss, current_step, batchind, num
 
 def points_to_surf_train(opt):
 
-    opt.gpu_idx=1
-    debug = True
+    debug = False
     if(debug):
         opt.batchSize = 128
         opt.workers = 0
@@ -181,21 +180,28 @@ def points_to_surf_train(opt):
         val_every = 3  # epochs
         backup_every = 5  # epochs
     else:
-        opt.batchSize = 1000
+        opt.batchSize = 128
         opt.workers = 4
         n_classes_train = 10
-        shapes_per_class_train = 40
+        shapes_per_class_train = 1000
         n_classes_test = 10
-        shapes_per_class_test = 3
-        opt.outdir = "/mnt/raphael/ModelNet10_out/p2s/conventional_debug"
-        print_every = 100  # iterations
-        val_every = 1000  # epochs
-        backup_every = 5000  # epochs
+        shapes_per_class_test = 4
+        opt.outdir = "/mnt/raphael/ModelNet10_out/p2s/conventional2"
+        print_every = 200  # iterations
+        val_every = 8000  # epochs
+        backup_every = 10000  # epochs
+
+    opt.gpu_idx=0
+
+    # gpu 0 runs with cache_size 1000
+    # gpu 1 runs with cache_size 100
+    # let's see if it makes a difference,
+    # before without sensor (gpu 0) was ~ 10-15mins ahead after 19 epochs
 
     opt.input_dim = 6
     opt.sensor = "vec"
-    # opt.input_dim = 3
-    # opt.sensor = None
+    opt.input_dim = 3
+    opt.sensor = None
 
     # device = torch.device("cpu" if opt.gpu_idx < 0 else "cuda:%d" % opt.gpu_idx)
     # print('Training on {} GPUs'.format(torch.cuda.device_count()))
@@ -415,10 +421,6 @@ def points_to_surf_train(opt):
     iterations = 0
     for epoch in range(start_epoch, opt.nepoch, 1):
 
-        # test_batchind = -1
-        # test_fraction_done = 10000.0
-        # test_enum = enumerate(test_dataloader, 0)
-        # print the time
         for batch_ind, batch_data_train in enumerate(train_dataloader):
 
             iterations+=1
