@@ -10,7 +10,127 @@ import trimesh
 from source.base import utils
 from source import sdf
 
+def normalize_3d_coordinate(p, padding=0.1):
+    ''' Normalize coordinate to [0, 1] for unit cube experiments.
+        Corresponds to our 3D model
 
+    Args:
+        p (tensor): point
+        padding (float): conventional padding paramter of ONet for unit cube, so [-0.5, 0.5] -> [-0.55, 0.55]
+    '''
+
+    p_nor = p / (1 + padding + 10e-4)  # (-0.5, 0.5)
+    p_nor = p_nor + 0.5  # range (0, 1)
+    # f there are outliers out of the range
+    if p_nor.max() >= 1:
+        p_nor[p_nor >= 1] = 1 - 10e-4
+    if p_nor.min() < 0:
+        p_nor[p_nor < 0] = 0.0
+    return p_nor
+
+def add_non_uniform(pointcloud_dict):
+    # t0 = time.time()
+    res = 100
+
+    points = pointcloud_dict['points']
+    normals = pointcloud_dict['normals']
+    gt_normals = pointcloud_dict['gt_normals']
+    sensors = pointcloud_dict['sensor_pos']
+
+    npoints = normalize_3d_coordinate(points, padding=0.1)
+    pindex = (npoints * res).astype(int)
+
+    pgrid = np.zeros(shape=(res, res, res), dtype=bool)
+
+    # apply buffering / dilation, with 5x5x5 kernel, and active the pgrid voxels
+    # this could maybe be sped up by using openCV: dilation = cv2.dilate(img,kernel,iterations = 1)
+
+    temp = np.arange(-2, 3)
+    kernel = np.array(np.meshgrid(temp, temp, temp)).T.reshape(-1, 3)  # 5x5x5 Kernel
+    for k in kernel:
+        pgrid[pindex[:, 0] + k[0], pindex[:, 1] + k[1], pindex[:, 2] + k[2]] = True
+
+    sensor_vecs = sensors - points
+    sensor_vecs = sensor_vecs / np.linalg.norm(sensor_vecs, axis=1)[:, np.newaxis]
+
+    n = 50
+    steps = np.expand_dims(np.linspace(0.01, 0.5, n), axis=1)
+
+    ## inside:
+    m = 2
+    npoints = np.repeat(points, m, axis=0)
+    ident = np.arange(points.shape[0])
+    ident = np.repeat(ident, m, axis=0)
+    ident = np.expand_dims(ident, axis=1)
+    nsensors = np.repeat(sensor_vecs, m, axis=0)
+    nsteps = np.tile(steps[:m], [points.shape[0], 3])
+    in_points = npoints - nsteps * nsensors
+    in_points = np.concatenate((in_points, ident), axis=1)
+
+    nin_points = normalize_3d_coordinate(in_points[:, :3], padding=0.1)
+    iindex = (nin_points * res).astype(int)
+    igrid = np.zeros(shape=(res, res, res), dtype=int)
+    # if a voxel includes more than one los_points, this will simply choose the first los_point in the list!
+    igrid[iindex[:, 0], iindex[:, 1], iindex[:, 2]] = np.arange(iindex.shape[0])
+    selected_iindex = igrid[igrid > 0]
+    in_points = in_points[selected_iindex]
+
+    ## outside:
+    npoints = np.repeat(points, n, axis=0)
+    ident = np.arange(points.shape[0])
+    ident = np.repeat(ident, n, axis=0)
+    ident = np.expand_dims(ident, axis=1)
+    nsensors = np.repeat(sensor_vecs, n, axis=0)
+    nsteps = np.tile(steps, [points.shape[0], 3])
+    los_points = npoints + nsteps * nsensors
+    los_points = np.concatenate((los_points, ident), axis=1)
+
+    nlos_points = normalize_3d_coordinate(los_points[:, :3], padding=0.1)
+    lindex = (nlos_points * res).astype(int)
+
+    lgrid = np.zeros(shape=(res, res, res), dtype=int)
+    # if a voxel includes more than one los_points, this will simply choose the first los_point in the list!
+    lgrid[lindex[:, 0], lindex[:, 1], lindex[:, 2]] = np.arange(lindex.shape[0])
+
+    # if there is a (buffered) point, keep the los_point
+    active = lgrid * pgrid
+    selected_lindex = active[active > 0]
+    los_points = los_points[selected_lindex]
+
+    ### put everything together
+    cident = np.zeros(shape=(points.shape[0], 2))
+    ins = np.concatenate((np.ones(shape=(in_points.shape[0], 1)), np.zeros(shape=(in_points.shape[0], 1))), axis=1)
+    out = np.concatenate((np.zeros(shape=(los_points.shape[0], 1)), np.ones(shape=(los_points.shape[0], 1))), axis=1)
+    cident = np.concatenate((cident,
+                             ins,
+                             out))
+
+    sensor_vecs = np.concatenate((sensor_vecs,
+                                  sensor_vecs[in_points[:, 3].astype(int)],
+                                  sensor_vecs[los_points[:, 3].astype(int)]))
+    normals = np.concatenate((normals,
+                              normals[in_points[:, 3].astype(int)],
+                              normals[los_points[:, 3].astype(int)]))
+    gt_normals = np.concatenate((gt_normals,
+                                 gt_normals[in_points[:, 3].astype(int)],
+                                 gt_normals[los_points[:, 3].astype(int)]))
+
+    points = np.concatenate((points,
+                             in_points[:, :3],
+                             los_points[:, :3]))
+    # points = np.concatenate((points, cident), axis=1)
+
+    # print("time: ", time.time() - t0)
+
+    data = {
+        'points': points.astype(np.float32),
+        'ident': cident.astype(np.float32),
+        'normals': normals.astype(np.float32),
+        'gt_normals': gt_normals.astype(np.float32),
+        'sensor_pos': sensor_vecs.astype(np.float32),
+    }
+
+    return data
 
 def load_points_and_sensor_information(point_filename):
 
@@ -20,6 +140,7 @@ def load_points_and_sensor_information(point_filename):
     data = np.load(point_filename)
     data_dict["points"] = data["points"].astype(np.float32)
     data_dict["normals"] = data["normals"].astype(np.float32)
+    data_dict["gt_normals"] = data["gt_normals"].astype(np.float32)
     data_dict["sensor_pos"] = data["sensors"].astype(np.float32)
 
     ### shouldn't do that here, because there are transformations applied to the points, so I should create the vectors after the transformation?!
@@ -36,7 +157,7 @@ def load_points_and_sensor_information(point_filename):
 
 
 def load_shape(point_filename, imp_surf_query_filename, imp_surf_dist_filename,
-               query_grid_resolution=None, epsilon=None):
+               query_grid_resolution=None, epsilon=None, sensor=None):
     """
     do NOT modify the returned points! kdtree uses a reference, not a copy of these points,
     so modifying the points would make the kdtree give incorrect results
@@ -51,6 +172,8 @@ def load_shape(point_filename, imp_surf_query_filename, imp_surf_dist_filename,
     # mmap_mode = 'r'
 
     data_dict = load_points_and_sensor_information(point_filename)
+    if(sensor=="grid"):
+        data_dict = add_non_uniform(data_dict)
 
     pts_np = data_dict['points']
 
@@ -428,8 +551,7 @@ class PointcloudPatchDataset(data.Dataset):
         patch_data = dict()
         # create new arrays to close the memory mapped files
 
-        if(self.opt.sensor):
-            ### sensor_vec_norm, even here it might not be good to create, since points are later multiplied with STN (spatial transformed network)
+        if(self.opt.sensor=="sensor_vec_norm"):
             patch_sensors_ps = shape.data["sensor_pos"][patch_pts_ids] - patch_pts_ps
             patch_sensors_ps = patch_sensors_ps / np.linalg.norm(patch_sensors_ps, axis=1)[:, np.newaxis]
             patch_data['patch_inputs_ps'] = np.concatenate((patch_pts_ps, patch_sensors_ps),axis=1)
@@ -437,6 +559,14 @@ class PointcloudPatchDataset(data.Dataset):
             sensors_sub_sample_ms = shape.data["sensor_pos"][ids_sub_sample_ms] - pts_sub_sample_ms
             sensors_sub_sample_ms = sensors_sub_sample_ms / np.linalg.norm(sensors_sub_sample_ms, axis=1)[:, np.newaxis]
             patch_data['inputs_sub_sample_ms'] = np.concatenate((pts_sub_sample_ms, sensors_sub_sample_ms), axis=1)
+        elif(self.opt.sensor=="grid"):
+            patch_sensors_ps = shape.data["sensor_pos"][patch_pts_ids] - patch_pts_ps
+            patch_sensors_ps = patch_sensors_ps / np.linalg.norm(patch_sensors_ps, axis=1)[:, np.newaxis]
+            patch_data['patch_inputs_ps'] = np.concatenate((patch_pts_ps, patch_sensors_ps, shape.data["ident"][patch_pts_ids]),axis=1)
+
+            sensors_sub_sample_ms = shape.data["sensor_pos"][ids_sub_sample_ms] - pts_sub_sample_ms
+            sensors_sub_sample_ms = sensors_sub_sample_ms / np.linalg.norm(sensors_sub_sample_ms, axis=1)[:, np.newaxis]
+            patch_data['inputs_sub_sample_ms'] = np.concatenate((pts_sub_sample_ms, sensors_sub_sample_ms, shape.data["ident"][ids_sub_sample_ms]), axis=1)
         else:
             patch_data['patch_inputs_ps'] = patch_pts_ps
             patch_data['inputs_sub_sample_ms'] = pts_sub_sample_ms
@@ -500,5 +630,5 @@ class PointcloudPatchDataset(data.Dataset):
             imp_surf_query_filename=imp_surf_query_filename,
             imp_surf_dist_filename=imp_surf_dist_filename,
             query_grid_resolution=self.query_grid_resolution,
-            epsilon=self.epsilon,
+            epsilon=self.epsilon, sensor=self.opt.sensor
             )

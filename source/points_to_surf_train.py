@@ -173,7 +173,7 @@ def points_to_surf_train(opt):
     # take 1500 nearest neighbors (when adding 4 auxiliary points per point
     # take 300 random points from the 1500 nearest neighbors
 
-    debug = False
+    debug = True
     if(debug):
         opt.batchSize = 128
         opt.workers = 0
@@ -205,9 +205,11 @@ def points_to_surf_train(opt):
     # before without sensor (gpu 0) was ~ 10-15mins ahead after 19 epochs
 
     opt.input_dim = 6
-    opt.sensor = "vec"
-    opt.input_dim = 3
-    opt.sensor = None
+    opt.sensor = "sensor_vec_norm"
+    opt.input_dim = 8
+    opt.sensor = "grid"
+    # opt.input_dim = 3
+    # opt.sensor = None
 
     # device = torch.device("cpu" if opt.gpu_idx < 0 else "cuda:%d" % opt.gpu_idx)
     # print('Training on {} GPUs'.format(torch.cuda.device_count()))
