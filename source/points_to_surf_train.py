@@ -61,7 +61,7 @@ def parse_arguments(args=None):
     # training parameters
     parser.add_argument('--net_size', type=int, default=1024,
                         help='number of neurons in the largest fully connected layer')
-    parser.add_argument('--nepoch', type=int, default=2,
+    parser.add_argument('--nepoch', type=int, default=101,
                         help='number of epochs to train for')
     parser.add_argument('--batchSize', type=int, default=2,
                         help='input batch size')
@@ -99,7 +99,7 @@ def parse_arguments(args=None):
                         'remain consecutive (shapes and patches inside a shape are permuted)')
     parser.add_argument('--identical_epochs', type=int, default=False,
                         help='use same patches in each epoch, mainly for debugging')
-    parser.add_argument('--lr', type=float, default=0.001,
+    parser.add_argument('--lr', type=float, default=0.01,
                         help='learning rate')
     parser.add_argument('--scheduler_steps', type=int, nargs='+', default=[25, 50, 75, 100],
                         help='the lr will be multiplicated with 0.1 at these epochs')
@@ -166,6 +166,12 @@ def do_logging(writer, log_prefix, epoch, opt, loss, current_step, batchind, num
 
 
 def points_to_surf_train(opt):
+
+    # TODO: check if patches are really taken from random shape inside one batch, just as sanity check to exclude it as a reason for jumpy loss
+    # TODO: add auxiliary points, 3 possible ways:
+    # keep 300 nearest neighbors (patch will get smaller)
+    # take 1500 nearest neighbors (when adding 4 auxiliary points per point
+    # take 300 random points from the 1500 nearest neighbors
 
     debug = False
     if(debug):

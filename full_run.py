@@ -60,8 +60,6 @@ if __name__ == '__main__':
         '--trainset', train_set,
         '--testset', val_set,
         '--net_size', str(1024),
-        '--nepoch', str(101),
-        '--lr', str(0.01),
         '--debug', str(0),
         '--points_per_patch', str(300),
         '--patches_per_shape', str(100),

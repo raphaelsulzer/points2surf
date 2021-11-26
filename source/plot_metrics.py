@@ -18,7 +18,7 @@ data_path = "/mnt/raphael/ModelNet10_out/p2s/"
 a = 0
 b = 100000000
 
-methods = ["conventional", "sensor_vec_norm"]
+methods = ["conventional2", "sensor_vec_norm2"]
 
 plt.figure("Loss")
 plt.figure("IoU")
@@ -27,19 +27,25 @@ colors = ["r","g"]
 
 for i,m in enumerate(methods):
 
-    file = os.path.join(data_path, m, 'metrics',"results_18.csv")
+    file = os.path.join(data_path, m, 'metrics',"results.csv")
     df = pd.read_csv(file, sep=',', header=0)
     loss_cl = df["train_loss_cl"].values
     loss_reg = df["train_loss_reg"].values
     loss_total = df["train_loss_total"].values
     iou = df["test_current_iou"].values
 
-    its = np.arange(start=10,stop=len(loss_total),step=10)
-    loss_total = loss_total[its]
-    loss_reg = loss_reg[its]
-    loss_cl = loss_cl[its]
-    iou = iou[its]
-
+    # its = np.arange(start=10000,stop=len(loss_total),step=10)
+    # loss_total = loss_total[its]
+    # loss_reg = loss_reg[its]
+    # loss_cl = loss_cl[its]
+    # iou = iou[its]
+    its = df["iteration"].values
+    a = 100
+    its = its[a:]
+    loss_total = loss_total[a:]
+    loss_reg = loss_reg[a:]
+    loss_cl = loss_cl[a:]
+    iou = iou[a:]
 
     plt.figure("Loss")
     plt.plot(its,loss_cl,':',color=colors[i])
