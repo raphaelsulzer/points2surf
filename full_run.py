@@ -14,9 +14,6 @@ from source.base import evaluation
 
 if __name__ == '__main__':
 
-
-
-
     model_name = 'vanilla'
     dataset = 'ModelNet10'
     base_dir = "/mnt/raphael"

@@ -25,7 +25,6 @@ from source import sdf
 
 import pandas as pd
 
-debug = False
 
 
 def parse_arguments(args=None):
@@ -192,22 +191,24 @@ def points_to_surf_train(opt):
         shapes_per_class_train = 1000
         n_classes_test = 10
         shapes_per_class_test = 4
-        opt.outdir = "/mnt/raphael/ModelNet10_out/p2s/sensor_vec_norm3"
+        opt.outdir = "/mnt/raphael/ModelNet10_out/p2s/sensor_grid_300_6"
         print_every = 200  # iterations
         val_every = 8000  # epochs
         backup_every = 10000  # epochs
 
-    opt.gpu_idx=1
+    # grid_300_6 means sample 1800 nearest neighbors for patch, and randomly select 300 of them
+
+    opt.gpu_idx=0
 
     # gpu 0 runs with cache_size 1000
     # gpu 1 runs with cache_size 100
     # let's see if it makes a difference,
     # before without sensor (gpu 0) was ~ 10-15mins ahead after 19 epochs
 
-    opt.input_dim = 6
-    opt.sensor = "sensor_vec_norm"
-    # opt.input_dim = 8
-    # opt.sensor = "grid"
+    # opt.input_dim = 6
+    # opt.sensor = "sensor_vec_norm"
+    opt.input_dim = 8
+    opt.sensor = "grid"
     # opt.input_dim = 3
     # opt.sensor = None
 

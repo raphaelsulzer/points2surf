@@ -172,6 +172,7 @@ def load_shape(point_filename, imp_surf_query_filename, imp_surf_dist_filename,
     # mmap_mode = 'r'
 
     data_dict = load_points_and_sensor_information(point_filename)
+    ori_shape = data_dict["points"].shape[0]
     if(sensor=="grid"):
         data_dict = add_non_uniform(data_dict)
 
@@ -198,8 +199,9 @@ def load_shape(point_filename, imp_surf_query_filename, imp_surf_dist_filename,
     elif query_grid_resolution is not None:
         # get query points near at grid nodes near the point cloud
         # get patches for those query points
+        ### MINE: this is where I need to restrict the query point search to the original pointcloud without auxiliary points
         imp_surf_query_point_ms = sdf.get_voxel_centers_grid_smaller_pc(
-            pts=pts_np, grid_resolution=query_grid_resolution,
+            pts=pts_np[:ori_shape], grid_resolution=query_grid_resolution,
             distance_threshold_vs=epsilon)
     else:
         imp_surf_query_point_ms = None
@@ -453,6 +455,7 @@ class PointcloudPatchDataset(data.Dataset):
                 if self.reconstruction:
                     # get number of grid points near the point cloud
                     pts = load_pts()
+                    # MINE, here is where the query points in inference are decided
                     grid_pts_near_surf_ms = \
                         sdf.get_voxel_centers_grid_smaller_pc(
                             pts=pts, grid_resolution=query_grid_resolution, distance_threshold_vs=self.epsilon)
@@ -485,10 +488,17 @@ class PointcloudPatchDataset(data.Dataset):
             if self.identical_epochs:
                 self.rng.seed((self.seed + index) % (2**32))
 
-            patch_pts_ids = point_cloud.get_patch_kdtree(
-                kdtree=shape.kdtree, rng=self.rng, query_point=query_point,
-                patch_radius=self.patch_radius,
-                points_per_patch=self.points_per_patch, n_jobs=1)
+            if(self.opt.sensor == "grid"):
+                patch_pts_ids = point_cloud.get_patch_kdtree(
+                    kdtree=shape.kdtree, rng=self.rng, query_point=query_point,
+                    patch_radius=self.patch_radius,
+                    points_per_patch=self.points_per_patch*6, n_jobs=self.opt.workers)
+                patch_pts_ids = np.random.choice(patch_pts_ids, size=self.points_per_patch, replace=False)
+            else:
+                patch_pts_ids = point_cloud.get_patch_kdtree(
+                    kdtree=shape.kdtree, rng=self.rng, query_point=query_point,
+                    patch_radius=self.patch_radius,
+                    points_per_patch=self.points_per_patch, n_jobs=self.opt.workers)
 
             # TODO: here I need to modify the patch when we have auxiliary points, probably easiest to get 1500 NN and choose 300
             # there is a problem with imp_surf_query_point_ms, there are too much when auxiliary points are used, check why
@@ -559,6 +569,8 @@ class PointcloudPatchDataset(data.Dataset):
                 trafo.transform_points(np.expand_dims(imp_surf_query_point_ms, 0), rand_rot)[0].astype(np.float32)
             imp_surf_query_point_ps = \
                 trafo.transform_points(np.expand_dims(imp_surf_query_point_ps, 0), rand_rot)[0].astype(np.float32)
+        else:
+            a=5
 
         patch_data = dict()
         # create new arrays to close the memory mapped files
