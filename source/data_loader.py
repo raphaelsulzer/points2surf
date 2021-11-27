@@ -490,6 +490,9 @@ class PointcloudPatchDataset(data.Dataset):
                 patch_radius=self.patch_radius,
                 points_per_patch=self.points_per_patch, n_jobs=1)
 
+            # TODO: here I need to modify the patch when we have auxiliary points, probably easiest to get 1500 NN and choose 300
+            # there is a problem with imp_surf_query_point_ms, there are too much when auxiliary points are used, check why
+
             # find -1 ids for padding
             patch_pts_pad_ids = patch_pts_ids == -1
             patch_pts_ids[patch_pts_pad_ids] = 0
@@ -515,7 +518,7 @@ class PointcloudPatchDataset(data.Dataset):
         imp_surf_query_point_ps = utils.model_space_to_patch_space_single_point(
             imp_surf_query_point_ms, imp_surf_query_point_ms, patch_radius_ms)
 
-
+        patch_sensors_ps = shape.data["sensor_pos"][patch_pts_ids]
 
         # surf dist can be None because we have no ground truth for evaluation
         # need a number or Pytorch will complain when assembling the batch
@@ -531,8 +534,12 @@ class PointcloudPatchDataset(data.Dataset):
             pts_sub_sample_ms, ids_sub_sample_ms = utils.get_point_cloud_sub_sample(
                 sub_sample_size=self.sub_sample_size, pts_ms=shape.pts,
                 query_point_ms=imp_surf_query_point_ms, uniform=self.uniform_subsample)
+            sensors_sub_sample_ms = shape.data["sensor_pos"][ids_sub_sample_ms]
         else:
             pts_sub_sample_ms = np.array([], dtype=np.float32)
+            sensors_sub_sample_ms = np.array([], dtype=np.float32)
+
+
 
         if not self.reconstruction:
             import trimesh.transformations as trafo
@@ -543,6 +550,11 @@ class PointcloudPatchDataset(data.Dataset):
                 trafo.transform_points(pts_sub_sample_ms, rand_rot).astype(np.float32)
             patch_pts_ps = \
                 trafo.transform_points(patch_pts_ps, rand_rot).astype(np.float32)
+            sensors_sub_sample_ms = \
+                trafo.transform_points(sensors_sub_sample_ms, rand_rot).astype(np.float32)
+            patch_sensors_ps = \
+                trafo.transform_points(patch_sensors_ps, rand_rot).astype(np.float32)
+
             imp_surf_query_point_ms = \
                 trafo.transform_points(np.expand_dims(imp_surf_query_point_ms, 0), rand_rot)[0].astype(np.float32)
             imp_surf_query_point_ps = \
@@ -552,11 +564,11 @@ class PointcloudPatchDataset(data.Dataset):
         # create new arrays to close the memory mapped files
 
         if(self.opt.sensor=="sensor_vec_norm"):
-            patch_sensors_ps = shape.data["sensor_pos"][patch_pts_ids] - patch_pts_ps
+            patch_sensors_ps = patch_sensors_ps - patch_pts_ps
             patch_sensors_ps = patch_sensors_ps / np.linalg.norm(patch_sensors_ps, axis=1)[:, np.newaxis]
             patch_data['patch_inputs_ps'] = np.concatenate((patch_pts_ps, patch_sensors_ps),axis=1)
 
-            sensors_sub_sample_ms = shape.data["sensor_pos"][ids_sub_sample_ms] - pts_sub_sample_ms
+            sensors_sub_sample_ms = sensors_sub_sample_ms - pts_sub_sample_ms
             sensors_sub_sample_ms = sensors_sub_sample_ms / np.linalg.norm(sensors_sub_sample_ms, axis=1)[:, np.newaxis]
             patch_data['inputs_sub_sample_ms'] = np.concatenate((pts_sub_sample_ms, sensors_sub_sample_ms), axis=1)
         elif(self.opt.sensor=="grid"):

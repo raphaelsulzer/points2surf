@@ -173,17 +173,17 @@ def points_to_surf_train(opt):
     # take 1500 nearest neighbors (when adding 4 auxiliary points per point
     # take 300 random points from the 1500 nearest neighbors
 
-    debug = True
+    debug = False
     if(debug):
         opt.batchSize = 128
         opt.workers = 0
         n_classes_train = 2
         shapes_per_class_train = 3
         n_classes_test = 1
-        shapes_per_class_test = 3
+        shapes_per_class_test = 2
         opt.outdir = "/mnt/raphael/ModelNet10_out/p2s/conventional_debug"
         print_every = 2  # iterations
-        val_every = 5  # epochs
+        val_every = 10  # epochs
         backup_every = 5  # epochs
     else:
         opt.batchSize = 128
@@ -192,7 +192,7 @@ def points_to_surf_train(opt):
         shapes_per_class_train = 1000
         n_classes_test = 10
         shapes_per_class_test = 4
-        opt.outdir = "/mnt/raphael/ModelNet10_out/p2s/sensor_grid"
+        opt.outdir = "/mnt/raphael/ModelNet10_out/p2s/sensor_vec_norm3"
         print_every = 200  # iterations
         val_every = 8000  # epochs
         backup_every = 10000  # epochs
@@ -204,12 +204,12 @@ def points_to_surf_train(opt):
     # let's see if it makes a difference,
     # before without sensor (gpu 0) was ~ 10-15mins ahead after 19 epochs
 
-    # opt.input_dim = 6
-    # opt.sensor = "sensor_vec_norm"
-    opt.input_dim = 8
-    opt.sensor = "grid"
-    opt.input_dim = 3
-    opt.sensor = None
+    opt.input_dim = 6
+    opt.sensor = "sensor_vec_norm"
+    # opt.input_dim = 8
+    # opt.sensor = "grid"
+    # opt.input_dim = 3
+    # opt.sensor = None
 
     # device = torch.device("cpu" if opt.gpu_idx < 0 else "cuda:%d" % opt.gpu_idx)
     # print('Training on {} GPUs'.format(torch.cuda.device_count()))
