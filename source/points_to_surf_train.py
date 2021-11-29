@@ -172,7 +172,7 @@ def points_to_surf_train(opt):
     # take 1500 nearest neighbors (when adding 4 auxiliary points per point
     # take 300 random points from the 1500 nearest neighbors
 
-    debug = False
+    debug = True
     if(debug):
         opt.batchSize = 128
         opt.workers = 0
@@ -198,7 +198,7 @@ def points_to_surf_train(opt):
 
     # grid_300_6 means sample 1800 nearest neighbors for patch, and randomly select 300 of them
 
-    opt.gpu_idx=0
+    opt.gpu_idx=2
 
     # gpu 0 runs with cache_size 1000
     # gpu 1 runs with cache_size 100

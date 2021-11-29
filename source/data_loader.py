@@ -617,6 +617,9 @@ class PointcloudPatchDataset(data.Dataset):
         for key in patch_data.keys():
             patch_data[key] = torch.from_numpy(patch_data[key])
 
+        patch_data['shape_ind'] = shape_ind
+
+
         return patch_data
 
     def __len__(self):

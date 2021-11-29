@@ -18,7 +18,7 @@ data_path = "/mnt/raphael/ModelNet10_out/p2s/"
 a = 0
 b = 100000000
 
-methods = ["conventional2", "sensor_vec_norm2", "sensor_vec_norm3"]
+methods = ["conventional2", "sensor_vec_norm3", "sensor_grid_300_6"]
 
 plt.figure("Loss")
 plt.figure("IoU")
@@ -40,7 +40,7 @@ for i,m in enumerate(methods):
     # loss_cl = loss_cl[its]
     # iou = iou[its]
     its = df["iteration"].values
-    a = 100
+    a = 10
     its = its[a:]
     loss_total = loss_total[a:]
     loss_reg = loss_reg[a:]
@@ -60,7 +60,7 @@ plt.grid()
 l = ["loss_sign","loss_dist","loss_total"]
 legend = ["conventional_"+l[0],"conventional_"+l[1],"conventional_"+l[2],
           "sensor_vec_"+l[0],"sensor_vec_"+l[1],"sensor_vec_"+l[2],
-          "sensor_vec2_"+l[0],"sensor_vec2_"+l[1],"sensor_vec2_"+l[2]]
+          "sensor_grid_"+l[0],"sensor_grid_"+l[1],"sensor_grid_"+l[2]]
 plt.legend(legend)
 plt.xlabel("Training Iterations")
 plt.ylabel("Loss")
