@@ -32,12 +32,18 @@ def compute_iou(occ1, occ2):
     return iou
 
 
-def eval_mesh(gt_file, recon_mesh):
+def eval_mesh(gt_file, recon_mesh, rotate=0):
 
     # print("gt_file: ",gt_file)
 
     occ = np.load(gt_file)
     occ_points = occ["points"]
+    if(rotate):
+        R=np.array([[-1, 0, 0], [0, 0, 1], [0, 1, 0]],dtype=np.float32)
+        occ_points=np.matmul(occ_points,R)
+    else:
+        a=5
+
     gt_occ = occ["occupancies"]
     gt_occ = np.unpackbits(gt_occ)[:occ_points.shape[0]]
     gt_occ = gt_occ.astype(np.bool)

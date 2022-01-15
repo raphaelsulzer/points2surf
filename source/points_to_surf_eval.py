@@ -1,3 +1,4 @@
+
 import argparse
 import os
 import random
@@ -16,27 +17,30 @@ from source.base import file_utils
 def parse_arguments(args=None):
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--indir', type=str, default='datasets/abc_minimal', help='input folder (meshes)')
-    parser.add_argument('--outdir', type=str, default='results',
+    parser.add_argument('--indir', type=str, default='indir', help='input folder (meshes)')
+    parser.add_argument('--outdir', type=str, default='outdir',
                         help='output folder (estimated point cloud properties)')
-    parser.add_argument('--dataset', nargs='+', type=str, default=['testset.txt'], help='shape set file name')
+    # parser.add_argument('--indir', type=str, default='/mnt/raphael/ShapeNetWatertight/', help='input folder (meshes)')
+    # parser.add_argument('--outdir', type=str, default='/mnt/raphael/ShapeNet_out/p2s',
+    #                     help='output folder (estimated point cloud properties)')
+    parser.add_argument('--dataset', nargs='+', type=str, default=['test.lst'], help='shape set file name')
+    parser.add_argument('--dataset_name', type=str, default='')
     parser.add_argument('--reconstruction', type=bool, default=False, help='do reconstruction instead of evaluation')
-    parser.add_argument('--query_grid_resolution', type=int, default=None,
+    parser.add_argument('--query_grid_resolution', type=int, default=128,
                         help='resolution of sampled volume used for reconstruction')
-    parser.add_argument('--epsilon', type=int, default=None,
+    parser.add_argument('--epsilon', type=int, default=3,
                         help='neighborhood size for reconstruction')
-    parser.add_argument('--certainty_threshold', type=float, default=None, help='')
-    parser.add_argument('--sigma', type=int, default=None, help='')
+    parser.add_argument('--certainty_threshold', type=float, default=13, help='')
+    parser.add_argument('--sigma', type=int, default=5, help='')
     parser.add_argument('--up_sampling_factor', type=int, default=10,
                         help='Neighborhood of points that is queried with the network. '
                              'This enables you to set the trade-off between computation time and tolerance for '
                              'sparsely sampled surfaces.')
-    parser.add_argument('--modeldir', type=str, default='models', help='model folder')
-    parser.add_argument('--models', type=str, default='p2s_vanilla',
+    parser.add_argument('--models', type=str, default='sensor_vec_norm',
                         help='names of trained models, can evaluate multiple models')
-    parser.add_argument('--modelpostfix', type=str, default='_model.pth', help='model file postfix')
+    parser.add_argument('--modelpostfix', type=str, default='', help='model file postfix')
     parser.add_argument('--parampostfix', type=str, default='_params.pth', help='parameter file postfix')
-    parser.add_argument('--gpu_idx', type=int, default=1, help='set < 0 to use CPU')
+    parser.add_argument('--gpu_idx', type=int, default=0, help='set < 0 to use CPU')
 
     parser.add_argument('--sparse_patches', type=int, default=False,
                         help='evaluate on a sparse set of patches, given by a '
@@ -52,12 +56,12 @@ def parse_arguments(args=None):
     parser.add_argument('--sub_sample_size', type=int, default=500,
                         help='number of points of the point cloud that are trained with each patch')
     parser.add_argument('--seed', type=int, default=40938661, help='manual seed')
-    parser.add_argument('--batchSize', type=int, default=0, help='batch size, if 0 the training batch size is used')
-    parser.add_argument('--n_classes', type=int, default=1, help='number of classes')
-    parser.add_argument('--shapes_per_class', type=int, default=2, help='number of shapes per class')
+    parser.add_argument('--batchSize', type=int, default=128, help='batch size, if 0 the training batch size is used')
+    parser.add_argument('--n_classes', type=int, default=2, help='number of classes')
+    parser.add_argument('--shapes_per_class', type=int, default=3, help='number of shapes per class')
     parser.add_argument('--workers', type=int, default=0,
                         help='number of data loading workers - 0 means same thread as main execution')
-    parser.add_argument('--cache_capacity', type=int, default=100,
+    parser.add_argument('--cache_capacity', type=int, default=10000,
                         help='Max. number of dataset elements (usually shapes) to hold in the cache at the same time.')
 
     opt = parser.parse_args(args=args)
@@ -110,7 +114,7 @@ def make_dataset(train_opt, eval_opt):
         opt=train_opt,
         root=eval_opt.indir,
         shape_list_filename=eval_opt.dataset,
-        scan='43',
+        scan=eval_opt.scan,
         points_per_patch=train_opt.points_per_patch,
         patch_features=train_opt.outputs,
         seed=eval_opt.seed,
@@ -125,7 +129,8 @@ def make_dataset(train_opt, eval_opt):
         epsilon=eval_opt.epsilon,  # not necessary for training
         uniform_subsample=train_opt.uniform_subsample if 'uniform_subsample' in train_opt else 0,
         n_classes=eval_opt.n_classes,
-        shapes_per_class=eval_opt.shapes_per_class
+        shapes_per_class=eval_opt.shapes_per_class,
+        classes=eval_opt.classes
     )
     return dataset
 
@@ -175,7 +180,11 @@ def make_regressor(train_opt, pred_dim, model_filename, device):
     # p2s_model.cuda(device=device)  # same order as in training
     p2s_model.to(device)
     # p2s_model = torch.nn.DataParallel(p2s_model)
-    p2s_model.load_state_dict(torch.load(model_filename))
+    load_dict = torch.load(model_filename,map_location=device)
+    if 'state_dict' in load_dict:
+        p2s_model.load_state_dict(load_dict['state_dict'])
+    else:
+        p2s_model.load_state_dict(load_dict)
     p2s_model.eval()
     return p2s_model
 
@@ -305,7 +314,6 @@ def save_evaluation(datasampler, dataset, eval_opt, model_out_dir, output_ids, o
 
 def points_to_surf_eval(eval_opt):
 
-    model_name = eval_opt.models
 
     if eval_opt.seed < 0:
         eval_opt.seed = random.randint(1, 10000)
@@ -317,8 +325,11 @@ def points_to_surf_eval(eval_opt):
     random.seed(eval_opt.seed)
     torch.manual_seed(eval_opt.seed)
 
-    model_filename = os.path.join(eval_opt.outdir,'model', model_name+eval_opt.modelpostfix)
-    param_filename = os.path.join(eval_opt.outdir, 'model', model_name+eval_opt.parampostfix)
+    model_filename = os.path.join(eval_opt.outdir,'model', "vanilla_model" + eval_opt.modelpostfix + ".pth")
+    param_filename = os.path.join(eval_opt.outdir, 'model',"vanilla"+eval_opt.parampostfix)
+
+    print("\nLoad model from ", model_filename)
+
 
     # load model and training parameters
     train_opt = torch.load(param_filename)
@@ -326,6 +337,7 @@ def points_to_surf_eval(eval_opt):
         train_opt.single_transformer = 0
     if not hasattr(train_opt, 'shared_transformer'):
         train_opt.shared_transformation = False
+    train_opt.dataset_name = eval_opt.dataset_name
 
     output_ids = get_output_ids(train_opt)
 

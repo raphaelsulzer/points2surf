@@ -26,17 +26,17 @@ from source import sdf
 import pandas as pd
 
 
-
 def parse_arguments(args=None):
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--name', type=str, default='debug',
+    parser.add_argument('--name', type=str, default='vanilla',
                         help='training run name')
-    parser.add_argument('--desc', type=str, default='My training run for single-scale normal estimation.',
+    parser.add_argument('--desc', type=str, default='vanilla',
                         help='description')
-    parser.add_argument('--indir', type=str, default='datasets/abc_minimal',
+    parser.add_argument('--dataset_name', type=str, default='ModelNet10')
+    parser.add_argument('--indir', type=str, default=None,
                         help='input folder (meshes)')
-    parser.add_argument('--outdir', type=str, default='models',
+    parser.add_argument('--outdir', type=str, default=None,
                         help='output folder (trained models)')
     parser.add_argument('--logdir', type=str, default='logs',
                         help='training log folder')
@@ -48,8 +48,9 @@ def parse_arguments(args=None):
                         help='save model each n epochs')
     parser.add_argument('--debug_interval', type=int, default='1',
                         help='print logging info each n epochs')
-    parser.add_argument('--refine', type=str, default='',
-                        help='refine model at this path')
+
+    parser.add_argument('--modelpostfix', type=str, default='', help='model file postfix')
+
     parser.add_argument('--gpu_idx', type=int, default=1,
                         help='set < 0 to use CPU')
     parser.add_argument('--patch_radius', type=float, default=0.05,
@@ -86,7 +87,7 @@ def parse_arguments(args=None):
                              'rotate local points with matrix trained from global points\n'
                              '1: single transformer for both local and global points')
 
-    parser.add_argument('--uniform_subsample', type=int, default=0,
+    parser.add_argument('--uniform_subsample', type=int, default=1,
                         help='1: global sub-sample uniformly sampled from the point cloud\n'
                              '0: distance-depending probability for global sub-sample')
     parser.add_argument('--shared_transformer', type=int, default=0,
@@ -134,7 +135,7 @@ def parse_arguments(args=None):
     return parser.parse_args(args=args)
 
 
-def do_logging(writer, log_prefix, epoch, opt, loss, current_step, batchind, num_batch, train, output_names, metrics_dict: dict):
+def do_logging(writer, log_prefix, epoch, iteration, opt, loss, current_step, batchind, num_batch, train, output_names, metrics_dict: dict):
     # current_step = (epoch + fraction_done) * num_batch * opt.batchSize
 
     loss_cpu = [l.detach().cpu().item() for l in loss]
@@ -157,8 +158,8 @@ def do_logging(writer, log_prefix, epoch, opt, loss, current_step, batchind, num
     time = datetime.now()
     time = time.strftime("[%H:%M:%S]")
     state_string = \
-        '[{time} Epoch: {epoch}: {batch}/{n_batches}] {prefix} loss: {loss:+.2f}, rmse: {rmse:+.2f}, f1: {f1:+.2f}'.format(
-            time=time, name=opt.name, epoch=epoch, batch=batchind, n_batches=num_batch - 1,
+        '[{time} Epoch: {epoch}: Iteration: {iteration}: {batch}/{n_batches}] {prefix} loss: {loss:+.2f}, rmse: {rmse:+.2f}, f1: {f1:+.2f}'.format(
+            time=time, name=opt.name, epoch=epoch, iteration=iteration, batch=batchind, n_batches=num_batch - 1,
             prefix=log_prefix, loss=loss_sum,
             rmse=metrics_dict['abs_dist_rms'], f1=metrics_dict['f1_score'])
     print(state_string)
@@ -172,7 +173,7 @@ def points_to_surf_train(opt):
     # take 1500 nearest neighbors (when adding 4 auxiliary points per point
     # take 300 random points from the 1500 nearest neighbors
 
-    debug = True
+    debug = False
     if(debug):
         opt.batchSize = 128
         opt.workers = 0
@@ -180,25 +181,27 @@ def points_to_surf_train(opt):
         shapes_per_class_train = 3
         n_classes_test = 1
         shapes_per_class_test = 2
-        opt.outdir = "/mnt/raphael/ModelNet10_out/p2s/conventional_debug"
+        opt.outdir = os.path.join(opt.outdir,"conventional_debug")
         print_every = 2  # iterations
         val_every = 10  # epochs
         backup_every = 5  # epochs
+        opt.input_dim = 3
+        opt.sensor = None
     else:
         opt.batchSize = 128
         opt.workers = 4
         n_classes_train = 10
         shapes_per_class_train = 1000
         n_classes_test = 10
-        shapes_per_class_test = 4
-        opt.outdir = "/mnt/raphael/ModelNet10_out/p2s/sensor_grid_300_6"
-        print_every = 200  # iterations
-        val_every = 8000  # epochs
-        backup_every = 10000  # epochs
+        shapes_per_class_test = 3
+        # opt.outdir = "/mnt/raphael/ModelNet10_out/p2s/uniform_neighborhood_1"
+        opt.outdir = os.path.join(opt.outdir,"uniform_neighborhood_1")
+        print_every = 1000  # iterations
+        val_every = 20000  # epochs
+        backup_every = 20000  # epochs
 
     # grid_300_6 means sample 1800 nearest neighbors for patch, and randomly select 300 of them
 
-    opt.gpu_idx=2
 
     # gpu 0 runs with cache_size 1000
     # gpu 1 runs with cache_size 100
@@ -207,10 +210,15 @@ def points_to_surf_train(opt):
 
     # opt.input_dim = 6
     # opt.sensor = "sensor_vec_norm"
+    # opt.input_dim = 8
+    # opt.sensor = "grid"
+
     opt.input_dim = 8
-    opt.sensor = "grid"
-    # opt.input_dim = 3
-    # opt.sensor = None
+    opt.sensor = "uniform_neighborhood"
+    opt.sub_sample_size = 3000
+    opt.points_per_patch = 900
+    opt.batchSize = 64
+
 
     # device = torch.device("cpu" if opt.gpu_idx < 0 else "cuda:%d" % opt.gpu_idx)
     # print('Training on {} GPUs'.format(torch.cuda.device_count()))
@@ -316,23 +324,50 @@ def points_to_surf_train(opt):
         sensor=opt.sensor
     )
 
-    start_epoch = 0
-    if opt.refine != '':
-        print(f'Refining weights from {opt.refine}')
-        p2s_model.to(device)
-        # p2s_model.cuda(device=device)  # same order as in training
-        # p2s_model = torch.nn.DataParallel(p2s_model)
-        p2s_model.load_state_dict(torch.load(opt.refine))
-        try:
-            # expecting a file name like 'vanilla_model_50.pth'
-            model_file = str(opt.refine)
-            last_underscore_pos = model_file.rfind('_')
-            last_dot_pos = model_file.rfind('.')
-            start_epoch = int(model_file[last_underscore_pos+1:last_dot_pos]) + 1
-            print(f'Continuing training from epoch {start_epoch}')
-        except:
-            print(f'Warning: {opt.refine} has no epoch in the name. The Tensorboard log will continue at '
-                  f'epoch 0 and might be messed up!')
+    p2s_model.to(device)
+
+    try:
+        load_dict = torch.load(os.path.join(opt.outdir, "model", "vanilla_model" + opt.modelpostfix+ ".pth"),map_location=device)
+        p2s_model.load_state_dict(load_dict['state_dict'])
+        results_df = pd.read_csv(os.path.join(opt.outdir,"metrics", 'results' + opt.modelpostfix + '.csv'))
+        print("Loaded model from: ", os.path.join(opt.outdir, "model", "vanilla_model" + opt.modelpostfix + ".pth"))
+    except:
+        load_dict = {}
+        cols = ['iteration', 'epoch', 'train_loss_cl', 'train_loss_reg', 'train_loss_total', 'test_current_iou',
+                'test_best_iou']
+        results_df = pd.DataFrame(columns=cols)
+        print("Couldn't load model from: ", os.path.join(opt.outdir, "model", "vanilla" + opt.modelpostfix))
+
+
+    # load_dict = torch.load(os.path.join(opt.outdir, "model", "vanilla_model" + opt.modelpostfix+ ".pth"),map_location=device)
+    # p2s_model.load_state_dict(load_dict)
+    # start_epoch = load_dict.get("epoch",15)
+    # iterations = load_dict.get("it",100000)
+    # best_iou = load_dict.get("iou_val_best",0.8415411)
+
+    start_epoch = load_dict.get("epoch",0)
+    iterations = load_dict.get("it",0)
+    best_iou = load_dict.get("iou_val_best",0.0)
+
+    print('\nCurrent best IoU is {}, at epoch {} iteration {}\n'.format(best_iou,start_epoch,iterations))
+
+    # start_epoch = 0
+    # if opt.refine != '':
+    #     print(f'Refining weights from {opt.refine}')
+    #     p2s_model.to(device)
+    #     # p2s_model.cuda(device=device)  # same order as in training
+    #     # p2s_model = torch.nn.DataParallel(p2s_model)
+    #     p2s_model.load_state_dict(torch.load(opt.refine))
+    #     try:
+    #         # expecting a file name like 'vanilla_model_50.pth'
+    #         model_file = str(opt.refine)
+    #         last_underscore_pos = model_file.rfind('_')
+    #         last_dot_pos = model_file.rfind('.')
+    #         start_epoch = int(model_file[last_underscore_pos+1:last_dot_pos]) + 1
+    #         print(f'Continuing training from epoch {start_epoch}')
+    #     except:
+    #         print(f'Warning: {opt.refine} has no epoch in the name. The Tensorboard log will continue at '
+    #               f'epoch 0 and might be messed up!')
 
     if opt.seed < 0:
         opt.seed = random.randint(1, 10000)
@@ -401,33 +436,22 @@ def points_to_surf_train(opt):
     # scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[], gamma=0.1)  # constant lr
     scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=opt.scheduler_steps, gamma=0.1)
 
-    if opt.refine == '':
-        # p2s_model.cuda(device=device)
-        p2s_model.to(device)
-        # p2s_model = torch.nn.DataParallel(p2s_model)
-
     train_num_batch = len(train_dataloader)
-    # test_num_batch = len(test_dataloader)
 
     # save parameters
     torch.save(opt, params_filename)
-
-    opt_max=torch.load("models/p2s_max_params.pth")
 
     # save description
     with open(desc_filename, 'w+') as text_file:
         print(opt.desc, file=text_file)
 
     mean_iou = 0.0
-    best_iou = 0.0
     best_epoch = 0
 
     # make an empty results file
 
     # create the results df
-    cols = ['iteration', 'epoch','train_loss_cl', 'train_loss_reg', 'train_loss_total','test_current_iou', 'test_best_iou']
-    results_df = pd.DataFrame(columns=cols)
-    iterations = 0
+
     for epoch in range(start_epoch, opt.nepoch, 1):
 
         for batch_ind, batch_data_train in enumerate(train_dataloader):
@@ -463,6 +487,8 @@ def points_to_surf_train(opt):
             row["test_current_iou"] = mean_iou
             row["test_best_iou"] = best_iou
 
+
+
             loss_total = sum(loss_train)
 
             # back-propagate through entire network to compute gradients of loss w.r.t. parameters
@@ -478,14 +504,18 @@ def points_to_surf_train(opt):
             if(iterations % print_every == 0):
 
                 ### save model
-                torch.save(p2s_model.state_dict(), model_filename)
+                state = {'epoch': epoch,
+                         'it': iterations,
+                         'iou_val_best': best_iou}
+                state['state_dict'] = p2s_model.state_dict()
+                torch.save(state, model_filename)
 
                 ### write results to file
                 results_df = results_df.append(row, ignore_index=True)
                 results_file = os.path.join(opt.outdir,"metrics","results.csv")
                 results_df.to_csv(results_file, index=False)
 
-                do_logging(writer=log_writer, log_prefix=green('train'), epoch=epoch, opt=opt, loss=loss_train,
+                do_logging(writer=log_writer, log_prefix=green('train'), epoch=epoch, iteration=iterations, opt=opt, loss=loss_train,
                             current_step=iterations, batchind=batch_ind, num_batch=train_num_batch,
                             train=True, output_names=output_names, metrics_dict=metrics_dict)
 
@@ -493,12 +523,12 @@ def points_to_surf_train(opt):
             if (iterations % val_every == 0):
                 # MINE: reconstruct test shapes using current model
                 ### save model
-                torch.save(p2s_model.state_dict(), model_filename)
+                # torch.save(p2s_model.state_dict(), model_filename)
 
                 #################################
                 ########### INFERENCE ###########
                 #################################
-                batch_size = 512  # ~7 GB memory on 1 1070 for 300 patch points + 1000 sub-sample points
+                batch_size = 128  # ~7 GB memory on 1 1070 for 300 patch points + 1000 sub-sample points
 
                 # grid_resolution = 256  # quality like in the paper
                 grid_resolution = 128  # quality for a short test
@@ -537,16 +567,23 @@ def points_to_surf_train(opt):
                 query_pts_ms_dir = os.path.join(res_dir_rec, 'query_pts_ms')
                 vol_out_dir = os.path.join(res_dir_rec, 'vol')
                 mesh_out_dir = os.path.join(res_dir_rec, 'mesh')
-                mean_iou = sdf.implicit_surface_to_mesh_directory(eval_opt,
+                results_dict = sdf.implicit_surface_to_mesh_directory(eval_opt,
                                                                   imp_surf_dist_ms_dir, query_pts_ms_dir,
                                                                   vol_out_dir, mesh_out_dir,
                                                                   grid_resolution, sigma, certainty_threshold,
                                                                   opt.workers)
 
+                rdf = pd.DataFrame.from_dict(results_dict)
+                mean_iou = rdf["iou"].mean()
+
                 if (mean_iou > best_iou):
                     best_iou = mean_iou
                     best_epoch = epoch
-                    torch.save(p2s_model.state_dict(), model_filename[:-4] + "_best.pth")
+                    state = {'epoch': epoch,
+                             'it': iterations,
+                             'iou_val_best': best_iou}
+                    state['state_dict'] = p2s_model.state_dict()
+                    torch.save(state, model_filename[:-4] + "_best.pth")
 
                 print("#############################################################")
                 print("Mean IoU {} | Best IoU {} at epoch {}".format(mean_iou, best_iou, best_epoch))
@@ -554,11 +591,15 @@ def points_to_surf_train(opt):
 
         if(iterations % backup_every):
             # backup metrics file in seperate file
-            results_file = os.path.join(opt.outdir, "metrics", "results_" + str(iterations) + ".csv")
+            results_file = os.path.join(opt.outdir, "metrics", "results_" + str(epoch) + ".csv")
             results_df.to_csv(results_file, index=False)
 
+            state = {'epoch': epoch,
+                     'it': iterations,
+                     'iou_val_best': best_iou}
+            state['state_dict'] = p2s_model.state_dict()
             # backup model in seperate file
-            torch.save(p2s_model.state_dict(), model_filename[:-4]+"_"+str(iterations)+".pth")
+            torch.save(state, model_filename[:-4]+"_"+str(epoch)+".pth")
 
 
 

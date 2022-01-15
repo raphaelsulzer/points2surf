@@ -14,10 +14,7 @@ from source.base import evaluation
 
 if __name__ == '__main__':
 
-    model_name = 'vanilla'
-    dataset = 'ModelNet10'
-    base_dir = "/mnt/raphael"
-    in_dir_train = os.path.join(base_dir, dataset)
+
 
     # train_set = 'trainset.txt'
     # val_set = 'valset.txt'
@@ -48,20 +45,22 @@ if __name__ == '__main__':
     shared_transformer = 0
 
     # os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    # indir = '/home/qt/sulzerr/scratch/data/ModelNet10'
+    # outdir = '/home/qt/sulzerr/scratch/data/ModelNet10_out/p2s/'
+
+    indir = '/mnt/raphael/ModelNet10'
+    outdir = '/mnt/raphael/ModelNet10_out/p2s/'
+
 
     train_params = [
-        '--name', model_name,
-        '--desc', model_name,
-        '--indir', in_dir_train,
-        '--outdir', 'models',
+        '--indir', indir,
+        '--outdir', outdir,
         '--trainset', train_set,
         '--testset', val_set,
-        '--debug', str(0),
         '--patch_radius', str(patch_radius),
         '--single_transformer', str(single_transformer),
         '--shared_transformer', str(shared_transformer),
         '--patch_center', 'mean',
-        '--uniform_subsample', str(1),
         '--outputs',
     ]
     train_params += features

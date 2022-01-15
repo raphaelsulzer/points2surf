@@ -1,5 +1,5 @@
 import time, os
-
+import sys
 import numpy as np
 import trimesh
 
@@ -247,19 +247,29 @@ def implicit_surface_to_mesh_file(recon_opt,
 
 
     # print(mc_out_file)
+    data_dir = recon_opt.indir
+    name = mc_out_file.split('/')[-1]
+    cname = name.split('_')[0]
+    id = name.split('_')[1][:-4]
+
+    if (recon_opt.dataset_name == "ModelNet10"):
+        gt_file = os.path.join(data_dir, cname, 'eval', id, 'points.npz')
+    elif (recon_opt.dataset_name == "ShapeNet"):
+        gt_file = os.path.join(data_dir, cname, id,'eval', 'points.npz')
+    else:
+        print(recon_opt.dataset_name, " is not a valid dataset!")
+        sys.exit(1)
+
+    # return results
+    dict = {}
+    dict["class"] = cname
+    dict["id"] = id
 
     if(mesh is not None):
-
-        data_dir = recon_opt.indir
-        name = mc_out_file.split('/')[-1]
-        cname = name.split('_')[0]
-        id = name.split('_')[1][:-4]
-        gt_file = os.path.join(data_dir,cname,'eval',id,'points.npz')
-
-        return eval_mesh(gt_file, mesh)
-
+        dict["iou"] = eval_mesh(gt_file, mesh, recon_opt.dataset_name == "ShapeNet")
     else:
-        return 0.0
+        dict["iou"] = 0.0
+    return dict
 
 
 
@@ -289,8 +299,8 @@ def implicit_surface_to_mesh_directory(recon_opt,
             calls.append((recon_opt, files_dist_ms_in_abs[fi], files_query_pts_ms_in_abs[fi],
                           files_vol_out_abs[fi], files_mesh_out_abs[fi], grid_res, sigma, certainty_threshold))
 
-    iou = utils_mp.start_process_pool(implicit_surface_to_mesh_file, calls, num_processes)
-    return np.array(iou).mean()
+    results_dict = utils_mp.start_process_pool(implicit_surface_to_mesh_file, calls, num_processes)
+    return results_dict
 
 
 def visualize_query_points(query_pts_ms, query_dist_ms, file_out_off):
