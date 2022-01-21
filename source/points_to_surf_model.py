@@ -239,7 +239,7 @@ class PointsToSurfModel(nn.Module):  # basing on PointNetDenseCls
     def __init__(self, net_size_max=1024, num_points=500, output_dim=3, use_point_stn=True, use_feat_stn=True,
                  sym_op='max', use_query_point=False,
                  sub_sample_size=500, do_augmentation=True, single_transformer=False, shared_transformation=False,
-                 input_dim=3,sensor=None):
+                 local_input_dim=3,global_input_dim=3,sensor=None):
         super(PointsToSurfModel, self).__init__()
 
         self.net_size_max = net_size_max
@@ -251,7 +251,8 @@ class PointsToSurfModel(nn.Module):  # basing on PointNetDenseCls
         self.do_augmentation = do_augmentation
         self.single_transformer = bool(single_transformer)
         self.shared_transformation = shared_transformation
-        self.input_dim = input_dim
+        self.local_input_dim = local_input_dim
+        self.global_input_dim = global_input_dim
         self.sensor = sensor
 
         if self.single_transformer:
@@ -272,7 +273,7 @@ class PointsToSurfModel(nn.Module):  # basing on PointNetDenseCls
                                       num_points=self.num_points+self.sub_sample_size, dim=3, sym_op=sym_op)
 
             self.feat_local = PointNetfeat(
-                input_dim=input_dim,
+                input_dim=local_input_dim,
                 net_size_max=net_size_max,
                 num_points=self.num_points,
                 num_scales=1,
@@ -281,7 +282,7 @@ class PointsToSurfModel(nn.Module):  # basing on PointNetDenseCls
                 output_size=self.net_size_max,
                 sym_op=sym_op)
             self.feat_global = PointNetfeat(
-                input_dim=input_dim,
+                input_dim=global_input_dim,
                 net_size_max=net_size_max,
                 num_points=self.sub_sample_size,
                 num_scales=1,

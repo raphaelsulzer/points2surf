@@ -4,7 +4,7 @@ from source import points_to_surf_eval
 from source.base import evaluation
 from source import sdf
 import pandas as pd
-import shutil
+import yaml
 
 # When you see this error:
 # 'Expected more than 1 value per channel when training...' which is raised by the BatchNorm1d layer
@@ -16,60 +16,33 @@ import shutil
 
 def full_eval(opt):
 
-    # indir_root = opt.indir
-    # outdir_root = os.path.join(opt.outdir, opt.models)
 
-    # indir_root = '/mnt/raphael/ModelNet10'
-    # outdir_root = os.path.join('/mnt/raphael/ModelNet10_out/p2s',opt.models)
-    # dataset_name = "ModelNet10"
+    with open(opt.config, 'r') as f:
+        cfg = yaml.safe_load(f)
 
-
-    # indir_root = '/home/qt/sulzerr/scratch/data/ShapeNet'
-    # outdir_root = os.path.join('/home/qt/sulzerr/scratch/data/ShapeNet_out/p2s',opt.models)
-    # dataset_name = "ShapeNet"
-    indir_root = '/mnt/raphael/ShapeNet'
-    outdir_root = os.path.join('/mnt/raphael/ShapeNet_out/p2s',opt.models)
-    dataset_name = "ShapeNet"
-
-    # if(os.path.exists(os.path.join('/mnt/raphael/ShapeNet_out/p2s',opt.models,'rec'))):
-    #     shutil.rmtree(os.path.join('/mnt/raphael/ShapeNet_out/p2s',opt.models,'rec'))
-
-    # indir_root = '/home/qt/sulzerr/scratch/data/ModelNet10'
-    # outdir_root = os.path.join('/home/qt/sulzerr/scratch/data/ModelNet10_out/p2s',opt.models)
-
-    opt.n_classes = 100
-    opt.shapes_per_class = 1
-    opt.classes = ['04530566']
-    # opt.classes = None
-    opt.scan = 42
-    opt.dataset_name = dataset_name
-    datasets = opt.dataset
-    dataset = "debug.lst"
-
-
+    # opt.n_classes = 100
+    # opt.shapes_per_class = 1000
+    # # opt.classes = ['04530566']
+    # # opt.classes = None
+    # opt.scan = 42
+    # opt.dataset_name = dataset_name
+    # datasets = opt.dataset
+    opt.dataset_name = cfg["data"]["dataset"]
+    opt.dataset = cfg["data"]["test_split"]
+    dataset = opt.dataset_name+" "+opt.dataset
     print(f'Evaluating on dataset {dataset}')
-    opt.indir = os.path.join(indir_root, os.path.dirname(dataset))
-    opt.outdir = os.path.join(outdir_root, os.path.dirname(dataset))
-    opt.dataset = os.path.basename(dataset)
-
-    # # evaluate
-    # if os.path.exists(os.path.join(opt.indir, '05_query_dist')):
-    #     opt.reconstruction = False
-    #     points_to_surf_eval.points_to_surf_eval(opt)
-    #
-    #     res_dir_eval = os.path.join(opt.outdir, 'eval')
-    #
-    #     evaluation.eval_predictions(
-    #         os.path.join(res_dir_eval, 'eval'),
-    #         os.path.join(opt.indir, '05_query_dist'),
-    #         os.path.join(res_dir_eval, 'rme_comp_res.csv'),
-    #         unsigned=False)
+    opt.indir = os.path.join(cfg["data"]["path"], os.path.dirname(dataset))
+    opt.outdir = os.path.join(cfg["training"]["out_dir"], os.path.dirname(dataset))
+    # opt.dataset = os.path.basename(dataset)
+    opt.shapes_per_class = cfg["generation"]["vis_n_outputs"]
+    opt.query_grid_resolution = cfg["test"]["grid_resolution"]
 
     # reconstruct
     start = time.time()
     opt.reconstruction = True
-    opt.modelpostfix = "_best"
-    points_to_surf_eval.points_to_surf_eval(opt)
+    opt.modelpostfix = cfg["training"]["load_model"]
+    if(cfg["generation"]["inference"]):
+        points_to_surf_eval.points_to_surf_eval(opt,cfg)
     res_dir_rec = os.path.join(opt.outdir, 'rec')
     end = time.time()
     print('Inference of SDF took: {}'.format(end - start))
@@ -94,15 +67,15 @@ def full_eval(opt):
 
 
     results_df = pd.DataFrame.from_dict(results_dict)
-    results_df.to_pickle(os.path.join(outdir_root, 'iou_all_' + dataset_name + '.pkl'))
+    results_df.to_pickle(os.path.join(cfg["training"]["out_dir"], 'iou_all_' + cfg["data"]["dataset"] + '.pkl'))
 
     results_df_class = results_df.groupby(by=['class']).mean()
     results_df_class.loc['mean'] = results_df_class.mean()
-    results_df_class.to_csv(os.path.join(outdir_root, 'iou_class_' + dataset_name + '.csv'))
+    results_df_class.to_csv(os.path.join(cfg["training"]["out_dir"], 'iou_class_' + cfg["data"]["dataset"] + '.csv'))
 
 
     time_df = pd.DataFrame(time_dict, index=[0])
-    time_df.to_csv(os.path.join(outdir_root, 'timing_' + dataset_name + '.csv'))
+    time_df.to_csv(os.path.join(cfg["training"]["out_dir"], 'timing_' + cfg["data"]["dataset"] + '.csv'))
 
     with pd.option_context('display.max_rows', None, 'display.max_columns',
                            None):  # more options can be specified also

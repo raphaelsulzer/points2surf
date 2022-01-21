@@ -70,10 +70,10 @@ def load_shape(point_filename, imp_surf_query_filename, imp_surf_dist_filename,
 
     data_dict = load_points_and_sensor_information(point_filename,rotate)
     ori_shape = data_dict["points"].shape[0]
-    if(sensor=="grid"):
-        data_dict = add_non_uniform(data_dict)
-    elif(sensor=="uniform_neighborhood"):
-        data_dict = add_uniform_neighborhood(data_dict,workers)
+    # if(sensor["aux"]=="grid"):
+    #     data_dict = add_non_uniform(data_dict)
+    # elif(sensor["aux"]=="uniform_neighborhood"):
+    #     data_dict = add_uniform_neighborhood(data_dict,workers)
 
 
 
@@ -84,6 +84,9 @@ def load_shape(point_filename, imp_surf_query_filename, imp_surf_dist_filename,
     leaf_size = 1000
     sys.setrecursionlimit(int(max(1000, round(pts_np.shape[0]/leaf_size))))
     kdtree = spatial.cKDTree(pts_np, leaf_size)
+
+    mean_nn_dist = kdtree.query(pts_np,k=2,n_jobs=workers)[0][:,1].mean()
+
 
     if imp_surf_dist_filename is not None:
         imp_surf_dist_ms = np.load(imp_surf_dist_filename)
@@ -103,14 +106,16 @@ def load_shape(point_filename, imp_surf_query_filename, imp_surf_dist_filename,
         # get patches for those query points
         ### MINE: this is where I need to restrict the query point search to the original pointcloud without auxiliary points
         imp_surf_query_point_ms = sdf.get_voxel_centers_grid_smaller_pc(
-            pts=pts_np[:ori_shape], grid_resolution=query_grid_resolution,
+            pts=pts_np, grid_resolution=query_grid_resolution,
             distance_threshold_vs=epsilon)
+        a=5
     else:
         imp_surf_query_point_ms = None
 
+
     return Shape(data=data_dict,
-        pts=pts_np, kdtree=kdtree,
-        imp_surf_query_point_ms=imp_surf_query_point_ms, imp_surf_dist_ms=imp_surf_dist_ms)
+        pts=pts_np, kdtree=kdtree, mean_nn_dist=mean_nn_dist,
+        imp_surf_query_point_ms=imp_surf_query_point_ms, imp_surf_dist_ms=imp_surf_dist_ms, name=point_filename)
 
 
 class SequentialPointcloudPatchSampler(data.sampler.Sampler):
@@ -220,13 +225,15 @@ class RandomPointcloudPatchSampler(data.sampler.Sampler):
 
 
 class Shape:
-    def __init__(self, data, pts, kdtree,
-                 imp_surf_query_point_ms, imp_surf_dist_ms):
+    def __init__(self, data, pts, kdtree, mean_nn_dist,
+                 imp_surf_query_point_ms, imp_surf_dist_ms,name=None):
         self.data = data
         self.pts = pts
         self.kdtree = kdtree
         self.imp_surf_query_point_ms = imp_surf_query_point_ms
         self.imp_surf_dist_ms = imp_surf_dist_ms
+        self.mean_nn_dist=mean_nn_dist
+        self.name = name
 
 
 class Cache:
@@ -264,15 +271,15 @@ class PointcloudPatchDataset(data.Dataset):
                  cache_capacity=1, point_count_std=0.0,
                  pre_processed_patches=False, query_grid_resolution=None,
                  sub_sample_size=500, reconstruction=False, uniform_subsample=False,
-                 num_workers=1, classes = None, scan = '43', n_classes=1, shapes_per_class=2):
+                 num_workers=1, classes = None, scan = '43', shapes_per_class=2):
 
         # initialize parameters
         self.opt = opt
         self.root = root
         self.scan = scan
-        self.shape_list_filename = shape_list_filename
+        self.shape_list_filename = shape_list_filename+".lst"
         self.patch_features = patch_features
-        self.points_per_patch = points_per_patch
+        self.points_per_patch = int(points_per_patch/3) if opt.sensor["local_aux"] else points_per_patch
         self.patch_radius = patch_radius
         self.identical_epochs = identical_epochs
         self.pre_processed_patches = pre_processed_patches
@@ -280,12 +287,11 @@ class PointcloudPatchDataset(data.Dataset):
         self.point_count_std = point_count_std
         self.seed = seed
         self.query_grid_resolution = query_grid_resolution
-        self.sub_sample_size = sub_sample_size
+        self.sub_sample_size = int(sub_sample_size/3) if opt.sensor["global_aux"] else sub_sample_size
         self.reconstruction = reconstruction
         self.num_workers = num_workers
         self.epsilon = epsilon
         self.uniform_subsample = uniform_subsample
-        # self.classes = ["eth"]
         self.classes = classes
 
         self.include_connectivity = False
@@ -315,9 +321,11 @@ class PointcloudPatchDataset(data.Dataset):
             classes = os.listdir(self.root)
         else:
             classes = self.classes
-        classes = classes[:n_classes]
         # remove class x
-        if 'x' in classes: classes.remove('x')
+        if not classes[0] == "x":
+            if 'x' in classes: classes.remove('x')
+        if not classes[0] == "real":
+            if 'real' in classes: classes.remove('real')
         if 'metadata.yaml' in classes: classes.remove('metadata.yaml')
         for c in classes:
             # with open(os.path.join(self.root, c, "p2s", self.shape_list_filename)) as f:
@@ -354,12 +362,19 @@ class PointcloudPatchDataset(data.Dataset):
                 id = temp[1]
                 if (self.opt.dataset_name == "ModelNet10"):
                     point_filename = os.path.join(self.root, c, 'convonet', str(self.scan), id, 'pointcloud.npz')
+                    pts = np.load(point_filename, mmap_mode='r')['points'].astype(np.float32)
                 elif (self.opt.dataset_name == "ShapeNet"):
                     point_filename = os.path.join(self.root, c, id, 'scan','4.npz')
+                    pts = np.load(point_filename, mmap_mode='r')['points'].astype(np.float32)
+                    R = np.array([[-1, 0, 0], [0, 0, 1], [0, 1, 0]], dtype=np.float32)
+                    pts = np.matmul(pts,R)
                 else:
                     print(self.opt.dataset_name, " is not a valid dataset!")
                     sys.exit(1)
-                pts = np.load(point_filename, mmap_mode='r')['points']
+                #### WARNING: VERY IMPORTANT THAT PTS IS CONVERTED TO NP.FLOAT32
+                # OTHERWISE THERE IS A NASTY BUG WHERE grid_pts_near_surf_ms can be != imp_surf_query_point_ms
+
+
                 return pts
 
                 # point_filename = os.path.join(self.root, c,'04_pts', shape_name + '.xyz')
@@ -383,6 +398,8 @@ class PointcloudPatchDataset(data.Dataset):
                         sdf.get_voxel_centers_grid_smaller_pc(
                             pts=pts, grid_resolution=query_grid_resolution, distance_threshold_vs=self.epsilon)
                     self.shape_patch_count.append(grid_pts_near_surf_ms.shape[0])
+
+                    a=5
 
                     # un-comment to get a debug output for the necessary query points
                     # mesh_io.write_off('debug/{}'.format(shape_name + '.off'), grid_pts_near_surf_ms, [])
@@ -412,6 +429,7 @@ class PointcloudPatchDataset(data.Dataset):
                 self.rng.seed((self.seed + index) % (2**32))
 
 
+
             patch_pts_ids = point_cloud.get_patch_kdtree(
                 kdtree=shape.kdtree, rng=self.rng, query_point=query_point,
                 patch_radius=self.patch_radius,
@@ -433,7 +451,7 @@ class PointcloudPatchDataset(data.Dataset):
                 patch_radius_ms=patch_radius_ms)
 
             return patch_pts_ids, pts_patch_ps, pts_patch_ms, patch_radius_ms
-
+        # print(index)
         # MINE: they actually load the shape (although from some kind of cache) for each query point again
         shape = self.shape_cache.get(shape_ind)
         imp_surf_query_point_ms = shape.imp_surf_query_point_ms[patch_ind]
@@ -492,25 +510,79 @@ class PointcloudPatchDataset(data.Dataset):
         patch_data = dict()
         # create new arrays to close the memory mapped files
 
-        if(self.opt.sensor=="sensor_vec_norm"):
+        if(self.opt.sensor["vector"]=="sensor_vec_norm"):
             patch_sensors_ps = patch_sensors_ps - patch_pts_ps
             patch_sensors_ps = patch_sensors_ps / np.linalg.norm(patch_sensors_ps, axis=1)[:, np.newaxis]
-            patch_data['patch_inputs_ps'] = np.concatenate((patch_pts_ps, patch_sensors_ps),axis=1)
+            local_input = np.concatenate((patch_pts_ps, patch_sensors_ps),axis=1)
 
             sensors_sub_sample_ms = sensors_sub_sample_ms - pts_sub_sample_ms
             sensors_sub_sample_ms = sensors_sub_sample_ms / np.linalg.norm(sensors_sub_sample_ms, axis=1)[:, np.newaxis]
-            patch_data['inputs_sub_sample_ms'] = np.concatenate((pts_sub_sample_ms, sensors_sub_sample_ms), axis=1)
-        elif(self.opt.sensor=="grid" or self.opt.sensor=="uniform_neighborhood"):
-            patch_sensors_ps = shape.data["sensor_pos"][patch_pts_ids] - patch_pts_ps
-            patch_sensors_ps = patch_sensors_ps / np.linalg.norm(patch_sensors_ps, axis=1)[:, np.newaxis]
-            patch_data['patch_inputs_ps'] = np.concatenate((patch_pts_ps, patch_sensors_ps, shape.data["ident"][patch_pts_ids]),axis=1)
-
-            sensors_sub_sample_ms = shape.data["sensor_pos"][ids_sub_sample_ms] - pts_sub_sample_ms
-            sensors_sub_sample_ms = sensors_sub_sample_ms / np.linalg.norm(sensors_sub_sample_ms, axis=1)[:, np.newaxis]
-            patch_data['inputs_sub_sample_ms'] = np.concatenate((pts_sub_sample_ms, sensors_sub_sample_ms, shape.data["ident"][ids_sub_sample_ms]), axis=1)
+            global_input = np.concatenate((pts_sub_sample_ms, sensors_sub_sample_ms), axis=1)
         else:
-            patch_data['patch_inputs_ps'] = patch_pts_ps
-            patch_data['inputs_sub_sample_ms'] = pts_sub_sample_ms
+            local_input = patch_pts_ps
+            global_input = pts_sub_sample_ms
+
+
+        if(self.opt.sensor["local_aux"]):
+            ident = np.zeros(shape=(patch_pts_ps.shape[0], 2), dtype=np.float32)
+            ip = ident
+            ii = ident + np.array([0, 1.0], dtype=np.float32)
+            io = ident + np.array([1.0, 0], dtype=np.float32)
+            # points
+            local_input = np.concatenate((local_input, ip), axis=1)
+
+            # auxiliary points
+            opoints = []
+            ipoints = []
+            for i in self.opt.sensor["stepsi"]:
+                ipoints.append(local_input[:, :3] + i * shape.mean_nn_dist * patch_sensors_ps)
+            for o in self.opt.sensor["stepso"]:
+                opoints.append(local_input[:, :3] + o * shape.mean_nn_dist * patch_sensors_ps)
+
+            opoints = np.array(opoints).reshape(patch_pts_ps.shape[0] * len(self.opt.sensor["stepso"]), 3)
+            ipoints = np.array(ipoints).reshape(patch_pts_ps.shape[0] * len(self.opt.sensor["stepsi"]), 3)
+
+            io = np.repeat(io, len(self.opt.sensor["stepso"]), axis=0)
+            ii = np.repeat(ii, len(self.opt.sensor["stepsi"]), axis=0)
+
+            opoints = np.concatenate((opoints, patch_sensors_ps, io), axis=1)
+            ipoints = np.concatenate((ipoints, patch_sensors_ps, ii), axis=1)
+
+            local_input = np.concatenate((local_input, opoints, ipoints))
+
+
+        if (self.opt.sensor["global_aux"]):
+
+            ident = np.zeros(shape=(pts_sub_sample_ms.shape[0], 2), dtype=np.float32)
+            ip = ident
+            ii = ident + np.array([0, 1.0], dtype=np.float32)
+            io = ident + np.array([1.0, 0], dtype=np.float32)
+            # points
+            global_input = np.concatenate((global_input, ip), axis=1)
+
+            # auxiliary points
+            opoints = []
+            ipoints = []
+            for i in self.opt.sensor["stepsi"]:
+                ipoints.append(global_input[:, :3] + i * shape.mean_nn_dist * sensors_sub_sample_ms)
+            for o in self.opt.sensor["stepso"]:
+                opoints.append(global_input[:, :3] + o * shape.mean_nn_dist * sensors_sub_sample_ms)
+
+            opoints = np.array(opoints).reshape(pts_sub_sample_ms.shape[0] * len(self.opt.sensor["stepso"]), 3)
+            ipoints = np.array(ipoints).reshape(pts_sub_sample_ms.shape[0] * len(self.opt.sensor["stepsi"]), 3)
+
+            io = np.repeat(io, len(self.opt.sensor["stepso"]), axis=0)
+            ii = np.repeat(ii, len(self.opt.sensor["stepsi"]), axis=0)
+
+            opoints = np.concatenate((opoints, sensors_sub_sample_ms, io), axis=1)
+            ipoints = np.concatenate((ipoints, sensors_sub_sample_ms, ii), axis=1)
+
+            global_input = np.concatenate((global_input, opoints, ipoints))
+
+
+
+        patch_data['patch_inputs_ps'] = local_input
+        patch_data['inputs_sub_sample_ms'] = global_input
 
         patch_data['patch_radius_ms'] = np.array(patch_radius_ms, dtype=np.float32)
         patch_data['imp_surf_query_point_ms'] = imp_surf_query_point_ms
@@ -535,6 +607,7 @@ class PointcloudPatchDataset(data.Dataset):
             patch_data[key] = torch.from_numpy(patch_data[key])
 
         patch_data['shape_ind'] = shape_ind
+        patch_data['filename'] = shape.name
 
 
         return patch_data
@@ -581,7 +654,8 @@ class PointcloudPatchDataset(data.Dataset):
             imp_surf_query_filename=imp_surf_query_filename,
             imp_surf_dist_filename=imp_surf_dist_filename,
             query_grid_resolution=self.query_grid_resolution,
-            epsilon=self.epsilon, sensor=self.opt.sensor,
+            epsilon=self.epsilon,
+            sensor=self.opt.sensor,
             workers= self.opt.workers,
             rotate=self.opt.dataset_name=="ShapeNet"
             )

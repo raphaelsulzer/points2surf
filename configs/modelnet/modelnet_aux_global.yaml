@@ -1,0 +1,47 @@
+method: p2s
+data:
+  dataset: ModelNet10
+  classes: null
+  scan: 42
+#  path: /mnt/raphael/ModelNet10
+  path: /home/qt/sulzerr/scratch/data/ModelNet10
+  train_split: train
+  val_split: test
+  test_split: test
+sensor:
+  local_aux: 0
+  global_aux: 1
+  vector: sensor_vec_norm
+  stepsi: [-1]
+  stepso: [ 1]
+  ident_dim: 2
+model:
+  local_subsample: 300
+  global_subsample: 3000
+  local_input_dim: 6
+  global_input_dim: 8
+  shared_transformer: 0
+training:
+  shapes_per_class: 10000
+#  out_dir: /mnt/raphael/ModelNet10_out/p2s/aux_global
+  out_dir: /home/qt/sulzerr/scratch/data/ModelNet10_out/p2s/aux_global
+  batch_size: 256
+  load_model: _best
+  n_workers: 4
+  n_workers_val: 4
+  print_every: 1000
+  val_every: 5000
+  backup_every: 10000
+  features: ['imp_surf_magnitude', 'imp_surf_sign', 'patch_pts_ids', 'p_index']
+test:
+  batch_size: 512
+  grid_resolution: 128
+  eval_mesh: true
+  eval_pointcloud: false
+generation:
+  generation_dir: mesh
+  vis_n_outputs: 10000
+  refine: false
+  n_x: 128
+  n_z: 1
+  file_ending: .ply

@@ -1,0 +1,44 @@
+method: p2s
+data:
+  dataset: ModelNet10
+  classes: null
+  scan: 42
+  path: /mnt/raphael/ModelNet10
+  train_split: train
+  val_split: test
+  test_split: test
+sensor:
+  global_aux: 1
+  local_aux: 1
+  vector: sensor_vec_norm
+  stepsi: [-1]
+  stepso: [ 1]
+  ident_dim: 2
+model:
+  local_subsample: 900
+  global_subsample: 3000
+  local_input_dim: 8
+  global_input_dim: 8
+  shared_transformer: 0
+training:
+  out_dir: /mnt/raphael/ModelNet10_out/p2s/conventional3
+  batch_size: 64
+  load_model: best
+  n_workers: 4
+  n_workers_val: 4
+  print_every: 10  # iterations
+  val_every: 20 # epochs
+  backup_every: 20  # epochs
+  features: ['imp_surf_magnitude', 'imp_surf_sign', 'patch_pts_ids', 'p_index']
+test:
+  batch_size: 128
+  grid_resolution: 128
+  eval_mesh: true
+  eval_pointcloud: false
+generation:
+  generation_dir: mesh
+  vis_n_outputs: 1000
+  refine: false
+  n_x: 128
+  n_z: 1
+  file_ending: .ply

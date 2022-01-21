@@ -13,6 +13,7 @@ import torch.nn.parallel
 import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
 import torch.utils.data
+import yaml
 
 from torch.utils.tensorboard import SummaryWriter
 
@@ -25,6 +26,7 @@ from source import sdf
 
 import pandas as pd
 
+from shutil import copyfile
 
 def parse_arguments(args=None):
     parser = argparse.ArgumentParser()
@@ -53,7 +55,7 @@ def parse_arguments(args=None):
 
     parser.add_argument('--gpu_idx', type=int, default=1,
                         help='set < 0 to use CPU')
-    parser.add_argument('--patch_radius', type=float, default=0.05,
+    parser.add_argument('--patch_radius', type=float, default=0.0,
                         help='Neighborhood of points that is queried with the network. '
                              'This enables you to set the trade-off between computation time and tolerance for '
                              'sparsely sampled surfaces. Use r <= 0.0 for k-NN queries.')
@@ -73,11 +75,6 @@ def parse_arguments(args=None):
                         help='standard deviation of the number of points in a patch')
     parser.add_argument('--patches_per_shape', type=int, default=100,
                         help='number of patches sampled from each shape in an epoch')
-    parser.add_argument('--sub_sample_size', type=int, default=1000,
-                        help='number of points of the point cloud that are trained with each patch')
-    parser.add_argument('--workers', type=int, default=0,
-                        help='number of data loading workers - 0 means same thread as main execution'
-                        'This has to be ZERO (not 1) for debugging. Otherwise debugging doesnt work')
     parser.add_argument('--cache_capacity', type=int, default=1000,
                         help='Max. number of dataset elements (usually shapes) to hold in the cache at the same time.')
     parser.add_argument('--seed', type=int, default=3627473,
@@ -127,10 +124,9 @@ def parse_arguments(args=None):
                         help='use feature spatial transformer')
     parser.add_argument('--sym_op', type=str, default='max',
                         help='symmetry operation')
-    parser.add_argument('--points_per_patch', type=int, default=300,
-                        help='max. number of points per patch')
     parser.add_argument('--debug', type=int, default=0,
                         help='set to 1 of you want debug outputs to validate the model')
+    parser.add_argument('config', type=str, help='Path to config file.')
 
     return parser.parse_args(args=args)
 
@@ -167,58 +163,30 @@ def do_logging(writer, log_prefix, epoch, iteration, opt, loss, current_step, ba
 
 def points_to_surf_train(opt):
 
-    # TODO: check if patches are really taken from random shape inside one batch, just as sanity check to exclude it as a reason for jumpy loss
-    # TODO: add auxiliary points, 3 possible ways:
-    # keep 300 nearest neighbors (patch will get smaller)
-    # take 1500 nearest neighbors (when adding 4 auxiliary points per point
-    # take 300 random points from the 1500 nearest neighbors
+    with open(opt.config, 'r') as f:
+        cfg = yaml.safe_load(f)
 
-    debug = False
-    if(debug):
-        opt.batchSize = 128
-        opt.workers = 0
-        n_classes_train = 2
-        shapes_per_class_train = 3
-        n_classes_test = 1
-        shapes_per_class_test = 2
-        opt.outdir = os.path.join(opt.outdir,"conventional_debug")
-        print_every = 2  # iterations
-        val_every = 10  # epochs
-        backup_every = 5  # epochs
-        opt.input_dim = 3
-        opt.sensor = None
-    else:
-        opt.batchSize = 128
-        opt.workers = 4
-        n_classes_train = 10
-        shapes_per_class_train = 1000
-        n_classes_test = 10
-        shapes_per_class_test = 3
-        # opt.outdir = "/mnt/raphael/ModelNet10_out/p2s/uniform_neighborhood_1"
-        opt.outdir = os.path.join(opt.outdir,"uniform_neighborhood_1")
-        print_every = 1000  # iterations
-        val_every = 20000  # epochs
-        backup_every = 20000  # epochs
+    os.makedirs(cfg["training"]["out_dir"],exist_ok=True)
+    # safe the config file to the outpath
+    copyfile(opt.config,os.path.join(cfg["training"]["out_dir"],"config.yaml"))
 
-    # grid_300_6 means sample 1800 nearest neighbors for patch, and randomly select 300 of them
+    # debug = True
+    # if(debug):
+    #     n_classes_train = 2
+    #     shapes_per_class_train = 3
+    #     n_classes_test = 1
+    #     shapes_per_class_test = 2
+    #     opt.outdir = os.path.join(opt.outdir,"conventional_debug")
+    # else:
+    #     n_classes_test = 10
+    #     shapes_per_class_test = 3
 
-
-    # gpu 0 runs with cache_size 1000
-    # gpu 1 runs with cache_size 100
-    # let's see if it makes a difference,
-    # before without sensor (gpu 0) was ~ 10-15mins ahead after 19 epochs
-
-    # opt.input_dim = 6
-    # opt.sensor = "sensor_vec_norm"
-    # opt.input_dim = 8
-    # opt.sensor = "grid"
-
-    opt.input_dim = 8
-    opt.sensor = "uniform_neighborhood"
-    opt.sub_sample_size = 3000
-    opt.points_per_patch = 900
-    opt.batchSize = 64
-
+    opt.outputs = cfg["training"]["features"]
+    opt.sensor = cfg["sensor"]
+    opt.sub_sample_size = cfg["model"]["global_subsample"]
+    opt.points_per_patch =  cfg["model"]["local_subsample"]
+    opt.outdir = cfg["training"]["out_dir"]
+    opt.workers = cfg["training"]["n_workers"]
 
     # device = torch.device("cpu" if opt.gpu_idx < 0 else "cuda:%d" % opt.gpu_idx)
     # print('Training on {} GPUs'.format(torch.cuda.device_count()))
@@ -320,7 +288,8 @@ def points_to_surf_train(opt):
         do_augmentation=True,
         single_transformer=opt.single_transformer,
         shared_transformation=opt.shared_transformer,
-        input_dim = opt.input_dim,
+        local_input_dim = cfg["model"]["local_input_dim"],
+        global_input_dim = cfg["model"]["global_input_dim"],
         sensor=opt.sensor
     )
 
@@ -339,35 +308,13 @@ def points_to_surf_train(opt):
         print("Couldn't load model from: ", os.path.join(opt.outdir, "model", "vanilla" + opt.modelpostfix))
 
 
-    # load_dict = torch.load(os.path.join(opt.outdir, "model", "vanilla_model" + opt.modelpostfix+ ".pth"),map_location=device)
-    # p2s_model.load_state_dict(load_dict)
-    # start_epoch = load_dict.get("epoch",15)
-    # iterations = load_dict.get("it",100000)
-    # best_iou = load_dict.get("iou_val_best",0.8415411)
+
 
     start_epoch = load_dict.get("epoch",0)
     iterations = load_dict.get("it",0)
     best_iou = load_dict.get("iou_val_best",0.0)
 
     print('\nCurrent best IoU is {}, at epoch {} iteration {}\n'.format(best_iou,start_epoch,iterations))
-
-    # start_epoch = 0
-    # if opt.refine != '':
-    #     print(f'Refining weights from {opt.refine}')
-    #     p2s_model.to(device)
-    #     # p2s_model.cuda(device=device)  # same order as in training
-    #     # p2s_model = torch.nn.DataParallel(p2s_model)
-    #     p2s_model.load_state_dict(torch.load(opt.refine))
-    #     try:
-    #         # expecting a file name like 'vanilla_model_50.pth'
-    #         model_file = str(opt.refine)
-    #         last_underscore_pos = model_file.rfind('_')
-    #         last_dot_pos = model_file.rfind('.')
-    #         start_epoch = int(model_file[last_underscore_pos+1:last_dot_pos]) + 1
-    #         print(f'Continuing training from epoch {start_epoch}')
-    #     except:
-    #         print(f'Warning: {opt.refine} has no epoch in the name. The Tensorboard log will continue at '
-    #               f'epoch 0 and might be messed up!')
 
     if opt.seed < 0:
         opt.seed = random.randint(1, 10000)
@@ -379,9 +326,9 @@ def points_to_surf_train(opt):
     # create train and test dataset loaders
     train_dataset = data_loader.PointcloudPatchDataset(
         opt=opt,
-        root=opt.indir,
-        scan="43",
-        shape_list_filename=opt.trainset,
+        root=cfg["data"]["path"],
+        scan=cfg["data"]["scan"],
+        shape_list_filename=cfg["data"]["train_split"],
         points_per_patch=opt.points_per_patch,
         patch_features=target_features,
         point_count_std=opt.patch_point_count_std,
@@ -391,12 +338,12 @@ def points_to_surf_train(opt):
         cache_capacity=opt.cache_capacity,
         pre_processed_patches=True,
         sub_sample_size=opt.sub_sample_size,
-        num_workers=int(opt.workers),
+        num_workers=int(cfg["training"]["n_workers"]),
         patch_radius=opt.patch_radius,
         epsilon=-1,  # not necessary for training
         uniform_subsample=opt.uniform_subsample,
-        n_classes=n_classes_train,
-        shapes_per_class=shapes_per_class_train
+        shapes_per_class=cfg["training"]["shapes_per_class"],
+        classes=cfg["data"]["classes"]
     )
     if opt.training_order == 'random':
         train_datasampler = data_loader.RandomPointcloudPatchSampler(
@@ -416,8 +363,8 @@ def points_to_surf_train(opt):
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
         sampler=train_datasampler,
-        batch_size=opt.batchSize,
-        num_workers=int(opt.workers))
+        batch_size=cfg["training"]["batch_size"],
+        num_workers=int(cfg["training"]["n_workers"]))
 
     ################################################################################
     ################################### TRAIN ######################################
@@ -459,6 +406,8 @@ def points_to_surf_train(opt):
             iterations+=1
             row = dict.fromkeys(list(results_df.columns))
 
+            # print('\n',batch_data["filename"])
+            del batch_data_train["filename"]
             # batch data to GPU
             for key in batch_data_train.keys():
                 batch_data_train[key] = batch_data_train[key].to(device)
@@ -501,7 +450,7 @@ def points_to_surf_train(opt):
 
             # backup model in seperate file
 
-            if(iterations % print_every == 0):
+            if(iterations % cfg["training"]["print_every"] == 0):
 
                 ### save model
                 state = {'epoch': epoch,
@@ -520,7 +469,7 @@ def points_to_surf_train(opt):
                             train=True, output_names=output_names, metrics_dict=metrics_dict)
 
 
-            if (iterations % val_every == 0):
+            if (iterations % cfg["training"]["val_every"] == 0):
                 # MINE: reconstruct test shapes using current model
                 ### save model
                 # torch.save(p2s_model.state_dict(), model_filename)
@@ -528,10 +477,8 @@ def points_to_surf_train(opt):
                 #################################
                 ########### INFERENCE ###########
                 #################################
-                batch_size = 128  # ~7 GB memory on 1 1070 for 300 patch points + 1000 sub-sample points
+                # batch_size = 128  # ~7 GB memory on 1 1070 for 300 patch points + 1000 sub-sample points
 
-                # grid_resolution = 256  # quality like in the paper
-                grid_resolution = 128  # quality for a short test
                 # this defines the voxel neighborhood around input points for which inference is run. Thus the higher, the more inference points
                 # points outside this are classified by the sign propagation
                 rec_epsilon = 3
@@ -540,22 +487,21 @@ def points_to_surf_train(opt):
 
                 print('Points2Surf is reconstructing {} into {}'.format(opt.outdir, res_dir_rec))
                 eval_params = [
+                    opt.config,
                     '--gpu_idx', str(opt.gpu_idx),
                     '--indir', opt.indir,
                     '--outdir', opt.outdir,
                     '--dataset', opt.testset,
-                    '--query_grid_resolution', str(grid_resolution),
                     '--reconstruction', str(True),
                     '--models', 'vanilla',
-                    '--batchSize', str(batch_size),
-                    '--workers', str(opt.workers),
+                    '--batchSize', str(cfg["test"]["batch_size"]),
+                    '--workers', str(cfg["training"]["n_workers_val"]),
                     '--cache_capacity', str(100),
                     '--epsilon', str(rec_epsilon),
-                    '--n_classes', str(n_classes_test),
-                    '--shapes_per_class', str(shapes_per_class_test)
+                    '--shapes_per_class', str(cfg["generation"]["vis_n_outputs"]),
                 ]
                 eval_opt = points_to_surf_eval.parse_arguments(eval_params)
-                points_to_surf_eval.points_to_surf_eval(eval_opt)
+                points_to_surf_eval.points_to_surf_eval(eval_opt,cfg)
 
                 #################################
                 ######### RECONSTRUCTION ########
@@ -570,8 +516,8 @@ def points_to_surf_train(opt):
                 results_dict = sdf.implicit_surface_to_mesh_directory(eval_opt,
                                                                   imp_surf_dist_ms_dir, query_pts_ms_dir,
                                                                   vol_out_dir, mesh_out_dir,
-                                                                  grid_resolution, sigma, certainty_threshold,
-                                                                  opt.workers)
+                                                                  cfg["test"]["grid_resolution"], sigma, certainty_threshold,
+                                                                  cfg["training"]["n_workers_val"])
 
                 rdf = pd.DataFrame.from_dict(results_dict)
                 mean_iou = rdf["iou"].mean()
@@ -589,7 +535,7 @@ def points_to_surf_train(opt):
                 print("Mean IoU {} | Best IoU {} at epoch {}".format(mean_iou, best_iou, best_epoch))
                 print("#############################################################")
 
-        if(iterations % backup_every):
+        if(iterations % cfg["training"]["backup_every"]):
             # backup metrics file in seperate file
             results_file = os.path.join(opt.outdir, "metrics", "results_" + str(epoch) + ".csv")
             results_df.to_csv(results_file, index=False)

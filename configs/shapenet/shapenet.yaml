@@ -1,0 +1,48 @@
+method: p2s
+data:
+  dataset: ShapeNet
+  classes: null
+  scan: 42
+#  path: /mnt/raphael/ShapeNet
+  path: /home/qt/sulzerr/scratch/data/ShapeNet
+  train_split: train
+  val_split: test
+  test_split: test10
+sensor:
+  local_aux: 0
+  global_aux: 0
+  vector: null
+  stepsi: [-1]
+  stepso: [ 1]
+  ident_dim: 0
+model:
+  local_subsample: 300
+  global_subsample: 1000
+  local_input_dim: 3
+  global_input_dim: 3
+  shared_transformer: 0
+training:
+  shapes_per_class: 10000
+#  out_dir: /mnt/raphael/ShapeNet_out/p2s/conventional
+  out_dir: /home/qt/sulzerr/scratch/data/ShapeNet_out/p2s/aux_global
+  batch_size: 128
+  load_model: _best
+  n_workers: 4
+  n_workers_val: 4
+  print_every: 1000
+  val_every: 5000
+  backup_every: 10000
+  features: ['imp_surf_magnitude', 'imp_surf_sign', 'patch_pts_ids', 'p_index']
+test:
+  batch_size: 1024
+  grid_resolution: 128
+  eval_mesh: true
+  eval_pointcloud: false
+generation:
+  inference: 1
+  generation_dir: mesh
+  vis_n_outputs: 1000
+  refine: false
+  n_x: 128
+  n_z: 1
+  file_ending: .ply

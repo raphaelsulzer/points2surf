@@ -1,0 +1,43 @@
+method: p2s
+data:
+  dataset: ModelNet10
+  classes: null
+  scan: 42
+  path: /mnt/raphael/ModelNet10
+  train_split: train
+  val_split: test
+  test_split: test
+sensor:
+  global_aux: 0
+  local_aux: 0
+  vector: sensor_vec_norm
+  stepsi: [-1]
+  stepso: [ 1]
+  ident_dim: 2
+model:
+  local_subsample: 300
+  global_subsample: 1000
+  local_input_dim: 6
+  global_input_dim: 6
+  shared_transformer: 0
+training:
+  out_dir: /mnt/raphael/ModelNet10_out/p2s/svn2
+  batch_size: 128
+  load_model: best
+  n_workers: 0
+  n_workers_val: 0
+  print_every: 1000  # iterations
+  val_every: 20000  # epochs
+  backup_every: 20000  # epochs
+test:
+  batch_size: 0.2
+  grid_resolution: 128
+  eval_mesh: true
+  eval_pointcloud: false
+generation:
+  generation_dir: mesh
+  vis_n_outputs: 1000
+  refine: false
+  n_x: 128
+  n_z: 1
+  file_ending: .ply

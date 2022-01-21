@@ -241,9 +241,11 @@ def implicit_surface_to_mesh_file(recon_opt,
                                   volume_out_file, mc_out_file, grid_res, sigma, certainty_threshold):
     query_dist_ms = np.load(query_dist_ms_file)
     query_pts_ms = np.load(query_pts_ms_file)
-    mesh = implicit_surface_to_mesh(query_dist_ms, query_pts_ms,
+    try:
+        mesh = implicit_surface_to_mesh(query_dist_ms, query_pts_ms,
                              volume_out_file, mc_out_file, grid_res, sigma, certainty_threshold)
-
+    except:
+        mesh = None
 
 
     # print(mc_out_file)

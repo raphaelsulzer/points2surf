@@ -1,4 +1,4 @@
-
+import sys
 import argparse
 import os
 import random
@@ -12,7 +12,7 @@ from source.points_to_surf_model import PointsToSurfModel
 from source import data_loader
 from source import sdf_nn
 from source.base import file_utils
-
+import yaml
 
 def parse_arguments(args=None):
     parser = argparse.ArgumentParser()
@@ -23,11 +23,9 @@ def parse_arguments(args=None):
     # parser.add_argument('--indir', type=str, default='/mnt/raphael/ShapeNetWatertight/', help='input folder (meshes)')
     # parser.add_argument('--outdir', type=str, default='/mnt/raphael/ShapeNet_out/p2s',
     #                     help='output folder (estimated point cloud properties)')
-    parser.add_argument('--dataset', nargs='+', type=str, default=['test.lst'], help='shape set file name')
+    parser.add_argument('--dataset', nargs='+', type=str, default=['test'], help='shape set file name')
     parser.add_argument('--dataset_name', type=str, default='')
     parser.add_argument('--reconstruction', type=bool, default=False, help='do reconstruction instead of evaluation')
-    parser.add_argument('--query_grid_resolution', type=int, default=128,
-                        help='resolution of sampled volume used for reconstruction')
     parser.add_argument('--epsilon', type=int, default=3,
                         help='neighborhood size for reconstruction')
     parser.add_argument('--certainty_threshold', type=float, default=13, help='')
@@ -61,8 +59,9 @@ def parse_arguments(args=None):
     parser.add_argument('--shapes_per_class', type=int, default=3, help='number of shapes per class')
     parser.add_argument('--workers', type=int, default=0,
                         help='number of data loading workers - 0 means same thread as main execution')
-    parser.add_argument('--cache_capacity', type=int, default=10000,
+    parser.add_argument('--cache_capacity', type=int, default=10,
                         help='Max. number of dataset elements (usually shapes) to hold in the cache at the same time.')
+    parser.add_argument('config', type=str, help='Path to config file.')
 
     opt = parser.parse_args(args=args)
     if len(opt.dataset) == 1:
@@ -128,7 +127,6 @@ def make_dataset(train_opt, eval_opt):
         patch_radius=train_opt.patch_radius,
         epsilon=eval_opt.epsilon,  # not necessary for training
         uniform_subsample=train_opt.uniform_subsample if 'uniform_subsample' in train_opt else 0,
-        n_classes=eval_opt.n_classes,
         shapes_per_class=eval_opt.shapes_per_class,
         classes=eval_opt.classes
     )
@@ -173,7 +171,8 @@ def make_regressor(train_opt, pred_dim, model_filename, device):
         do_augmentation=False,
         single_transformer=train_opt.single_transformer,
         shared_transformation=train_opt.shared_transformer,
-        input_dim=train_opt.input_dim,
+        local_input_dim=train_opt.local_input_dim,
+        global_input_dim=train_opt.global_input_dim,
         sensor=train_opt.sensor
     )
 
@@ -312,8 +311,16 @@ def save_evaluation(datasampler, dataset, eval_opt, model_out_dir, output_ids, o
                    datasampler.shape_patch_inds[shape_ind], fmt='%d')
 
 
-def points_to_surf_eval(eval_opt):
+def points_to_surf_eval(eval_opt,cfg):
 
+
+
+    eval_opt.dataset_name = cfg["data"]["dataset"]
+    eval_opt.dataset = cfg["data"]["test_split"]
+    eval_opt.scan = cfg["data"]["scan"]
+    eval_opt.classes = cfg["data"]["classes"]
+    eval_opt.indir = cfg["data"]["path"]
+    eval_opt.query_grid_resolution = cfg["test"]["grid_resolution"]
 
     if eval_opt.seed < 0:
         eval_opt.seed = random.randint(1, 10000)
@@ -338,13 +345,12 @@ def points_to_surf_eval(eval_opt):
     if not hasattr(train_opt, 'shared_transformer'):
         train_opt.shared_transformation = False
     train_opt.dataset_name = eval_opt.dataset_name
+    train_opt.local_input_dim = cfg["model"]["local_input_dim"]
+    train_opt.global_input_dim = cfg["model"]["global_input_dim"]
+    train_opt.sensor = cfg["sensor"]
 
     output_ids = get_output_ids(train_opt)
 
-    if eval_opt.batchSize == 0:
-        model_batch_size = train_opt.batchSize
-    else:
-        model_batch_size = eval_opt.batchSize
 
     pred_dim, output_pred_ind = get_output_dimensions(train_opt)
 
@@ -352,7 +358,7 @@ def points_to_surf_eval(eval_opt):
     dataset = make_dataset(train_opt=train_opt, eval_opt=eval_opt)
     datasampler = make_datasampler(eval_opt=eval_opt, dataset=dataset)
     dataloader = make_dataloader(eval_opt=eval_opt, dataset=dataset, datasampler=datasampler,
-                                 model_batch_size=model_batch_size)
+                                 model_batch_size=cfg["test"]["batch_size"])
     p2s_model = make_regressor(train_opt=train_opt, pred_dim=pred_dim, model_filename=model_filename, device=device)
 
     shape_ind = 0
@@ -377,6 +383,21 @@ def points_to_surf_eval(eval_opt):
 
     print(f'evaluating {len(dataset)} patches')
     for batch_data in tqdm(dataloader):
+
+        # this is for skipping already existing evaluated shapes
+        if(cfg["data"]["dataset"] == "ShapeNet"):
+            fname = batch_data["filename"][-1].split("/")[-4]+"_"+batch_data["filename"][-1].split("/")[-3] + ".xyz.npy"
+        elif(cfg["data"]["dataset"]=="ModelNet10"):
+            fname = batch_data["filename"][-1].split("/")[-5]+"_"+batch_data["filename"][-1].split("/")[-2] + ".xyz.npy"
+        else:
+            print("not a valid dataset")
+            sys.exit(1)
+
+        if(os.path.exists(os.path.join(cfg["training"]["out_dir"],"rec","dist_ms",fname))):
+            continue
+
+        # print('\n',batch_data["filename"])
+        del batch_data["filename"]
 
         # batch data to GPU
         for key in batch_data.keys():
