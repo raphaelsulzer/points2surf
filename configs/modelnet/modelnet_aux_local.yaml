@@ -1,10 +1,10 @@
 method: p2s
 data:
   dataset: ModelNet10
-  classes: null
-  scan: 42
-#  path: /mnt/raphael/ModelNet10
-  path: /home/qt/sulzerr/scratch/data/ModelNet10
+  classes: ["toilet","bed"]
+  scan: 43
+  path: /mnt/raphael/ModelNet10
+#  path: /home/qt/sulzerr/scratch/data/ModelNet10
   train_split: train
   val_split: test
   test_split: test
@@ -23,8 +23,8 @@ model:
   shared_transformer: 0
 training:
   shapes_per_class: 10000
-#  out_dir: /mnt/raphael/ModelNet10_out/p2s/aux_local
-  out_dir: /home/qt/sulzerr/scratch/data/ModelNet10_out/p2s/aux_local
+  out_dir: /mnt/raphael/ModelNet10_out/p2s/aux_local
+#  out_dir: /home/qt/sulzerr/scratch/data/ModelNet10_out/p2s/aux_local
   batch_size: 256
   load_model: _best
   n_workers: 4
@@ -34,13 +34,15 @@ training:
   backup_every: 10000
   features: ['imp_surf_magnitude', 'imp_surf_sign', 'patch_pts_ids', 'p_index']
 test:
-  batch_size: 512
+  batch_size: 128
   grid_resolution: 128
   eval_mesh: true
   eval_pointcloud: false
 generation:
+  inference: 1
+  eval_mesh: 0
   generation_dir: mesh
-  vis_n_outputs: 10000
+  vis_n_outputs: 3  # controls also number of validation objects per class
   refine: false
   n_x: 128
   n_z: 1

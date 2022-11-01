@@ -2,6 +2,8 @@ import sys
 import argparse
 import os
 import random
+import time
+
 import numpy as np
 import torch
 import torch.nn.parallel
@@ -108,22 +110,22 @@ def get_output_dimensions(train_opt):
     return pred_dim, output_pred_ind
 
 
-def make_dataset(train_opt, eval_opt):
+def make_dataset(train_opt, eval_opt, cfg):
     dataset = data_loader.PointcloudPatchDataset(
         opt=train_opt,
         root=eval_opt.indir,
         shape_list_filename=eval_opt.dataset,
-        scan=eval_opt.scan,
-        points_per_patch=train_opt.points_per_patch,
+        scan=cfg["data"]["scan"],
+        points_per_patch=cfg["model"]["local_subsample"],
         patch_features=train_opt.outputs,
         seed=eval_opt.seed,
         center=train_opt.patch_center,
         cache_capacity=eval_opt.cache_capacity,
         pre_processed_patches=True,
-        sub_sample_size=train_opt.sub_sample_size,
+        sub_sample_size=cfg["model"]["global_subsample"],
         reconstruction=eval_opt.reconstruction,
         query_grid_resolution=eval_opt.query_grid_resolution,
-        num_workers=int(eval_opt.workers),
+        num_workers=int(cfg["training"]["n_workers_val"]),
         patch_radius=train_opt.patch_radius,
         epsilon=eval_opt.epsilon,  # not necessary for training
         uniform_subsample=train_opt.uniform_subsample if 'uniform_subsample' in train_opt else 0,
@@ -156,18 +158,18 @@ def make_dataloader(eval_opt, dataset, datasampler, model_batch_size):
     return dataloader
 
 
-def make_regressor(train_opt, pred_dim, model_filename, device):
+def make_regressor(train_opt, pred_dim, model_filename, device, cfg):
 
     use_query_point = any([f in train_opt.outputs for f in ['imp_surf', 'imp_surf_magnitude', 'imp_surf_sign']])
     p2s_model = PointsToSurfModel(
         net_size_max=train_opt.net_size if 'net_size' in train_opt else 1024,
-        num_points=train_opt.points_per_patch,
+        num_points=cfg["model"]["local_subsample"],
         output_dim=pred_dim,
         use_point_stn=train_opt.use_point_stn,
         use_feat_stn=train_opt.use_feat_stn,
         sym_op=train_opt.sym_op,
         use_query_point=use_query_point,
-        sub_sample_size=train_opt.sub_sample_size,
+        sub_sample_size=cfg["model"]["global_subsample"],
         do_augmentation=False,
         single_transformer=train_opt.single_transformer,
         shared_transformation=train_opt.shared_transformer,
@@ -211,7 +213,6 @@ def post_process(batch_pred, train_opt, output_ids, output_pred_ind, patch_radiu
         imp_surf_sig_pred = batch_pred[:, output_pred_ind[oi_iss]:output_pred_ind[oi_iss] + 1]
         imp_surf_sig_pred = sdf_nn.post_process_sign(pred=imp_surf_sig_pred)
         batch_pred[:, output_pred_ind[oi_iss]:output_pred_ind[oi_iss] + 1] = imp_surf_sig_pred
-
 
 def save_reconstruction_data(imp_surf_dist_ms, dataset, model_out_dir, shape_ind):
 
@@ -286,7 +287,6 @@ def save_evaluation(datasampler, dataset, eval_opt, model_out_dir, output_ids, o
         imp_surf_sig_shape = imp_surf_sig_shape.squeeze()
 
         imp_surf_shape_ms = imp_surf_mag_shape_ms * imp_surf_sig_shape
-
         imp_surf_np_ms = imp_surf_shape_ms.cpu().numpy()
 
         os.makedirs(os.path.join(model_out_dir, 'eval'), exist_ok=True)
@@ -355,11 +355,11 @@ def points_to_surf_eval(eval_opt,cfg):
     pred_dim, output_pred_ind = get_output_dimensions(train_opt)
 
     # here is where the validation dataset is made
-    dataset = make_dataset(train_opt=train_opt, eval_opt=eval_opt)
+    dataset = make_dataset(train_opt=train_opt, eval_opt=eval_opt, cfg=cfg)
     datasampler = make_datasampler(eval_opt=eval_opt, dataset=dataset)
     dataloader = make_dataloader(eval_opt=eval_opt, dataset=dataset, datasampler=datasampler,
                                  model_batch_size=cfg["test"]["batch_size"])
-    p2s_model = make_regressor(train_opt=train_opt, pred_dim=pred_dim, model_filename=model_filename, device=device)
+    p2s_model = make_regressor(train_opt=train_opt, pred_dim=pred_dim, model_filename=model_filename, device=device, cfg=cfg)
 
     shape_ind = 0
     shape_patch_offset = 0
@@ -381,6 +381,7 @@ def points_to_surf_eval(eval_opt,cfg):
     if not os.path.exists(model_out_dir):
         os.makedirs(model_out_dir)
 
+    train_opt.batchSize = 128
     print(f'evaluating {len(dataset)} patches')
     for batch_data in tqdm(dataloader):
 
@@ -393,17 +394,19 @@ def points_to_surf_eval(eval_opt,cfg):
             print("not a valid dataset")
             sys.exit(1)
 
-        if(os.path.exists(os.path.join(cfg["training"]["out_dir"],"rec","dist_ms",fname))):
-            continue
+        # if(os.path.exists(os.path.join(cfg["training"]["out_dir"],"rec","dist_ms",fname))):
+        #     continue
 
         # print('\n',batch_data["filename"])
         del batch_data["filename"]
 
-        # batch data to GPU
-        for key in batch_data.keys():
-            # batch_data[key] = batch_data[key].cuda(non_blocking=True)
-            batch_data[key] = batch_data[key].to(device)
-
+        # t0 = time.time()
+        with torch.no_grad():
+            # batch data to GPU
+            for key in batch_data.keys():
+                # batch_data[key] = batch_data[key].cuda(non_blocking=True)
+                batch_data[key] = batch_data[key].to(device)
+        # print(time.time()-t0)
 
         fixed_radius = train_opt.patch_radius > 0.0
         patch_radius = train_opt.patch_radius
@@ -417,6 +420,7 @@ def points_to_surf_eval(eval_opt,cfg):
         post_process(batch_pred, train_opt, output_ids, output_pred_ind, patch_radius, fixed_radius)
 
         batch_offset = 0
+
         while batch_offset < batch_pred.size(0):
 
             shape_patches_remaining = shape_patch_count-shape_patch_offset
@@ -446,6 +450,7 @@ def points_to_surf_eval(eval_opt,cfg):
                         raise ValueError('Unknown sampling strategy: %s' % eval_opt.sampling)
                     shape_patch_values = torch.zeros(shape_patch_count, pred_dim,
                                                      dtype=torch.float32, device=device)
+
 
 
 if __name__ == '__main__':

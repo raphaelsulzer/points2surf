@@ -1,6 +1,8 @@
 import os
 import os.path
 import sys
+import time
+
 import torch
 import torch.utils.data as data
 import numpy as np
@@ -288,6 +290,7 @@ class PointcloudPatchDataset(data.Dataset):
         self.seed = seed
         self.query_grid_resolution = query_grid_resolution
         self.sub_sample_size = int(sub_sample_size/3) if opt.sensor["global_aux"] else sub_sample_size
+        # self.sub_sample_size = sub_sample_size
         self.reconstruction = reconstruction
         self.num_workers = num_workers
         self.epsilon = epsilon
@@ -361,7 +364,7 @@ class PointcloudPatchDataset(data.Dataset):
                 c = temp[0]
                 id = temp[1]
                 if (self.opt.dataset_name == "ModelNet10"):
-                    point_filename = os.path.join(self.root, c, 'convonet', str(self.scan), id, 'pointcloud.npz')
+                    point_filename = os.path.join(self.root, c, 'scan', str(self.scan), id, 'scan.npz')
                     pts = np.load(point_filename, mmap_mode='r')['points'].astype(np.float32)
                 elif (self.opt.dataset_name == "ShapeNet"):
                     point_filename = os.path.join(self.root, c, id, 'scan','4.npz')
@@ -416,6 +419,8 @@ class PointcloudPatchDataset(data.Dataset):
     # returns a patch centered at the point with the given global index
     # and the ground truth normal at the patch center
     def __getitem__(self, index):
+
+        t0 = time.time()
 
         # find shape that contains the point with given global index
         shape_ind, patch_ind = self.shape_index(index)
@@ -550,6 +555,8 @@ class PointcloudPatchDataset(data.Dataset):
 
             local_input = np.concatenate((local_input, opoints, ipoints))
 
+            a=5
+
 
         if (self.opt.sensor["global_aux"]):
 
@@ -579,9 +586,12 @@ class PointcloudPatchDataset(data.Dataset):
 
             global_input = np.concatenate((global_input, opoints, ipoints))
 
+            a=5
+
 
 
         patch_data['patch_inputs_ps'] = local_input
+        # patch_data['inputs_sub_sample_ms'] = global_input[:1000,:]
         patch_data['inputs_sub_sample_ms'] = global_input
 
         patch_data['patch_radius_ms'] = np.array(patch_radius_ms, dtype=np.float32)
@@ -609,7 +619,7 @@ class PointcloudPatchDataset(data.Dataset):
         patch_data['shape_ind'] = shape_ind
         patch_data['filename'] = shape.name
 
-
+        # print(time.time()-t0)
         return patch_data
 
     def __len__(self):
@@ -636,7 +646,7 @@ class PointcloudPatchDataset(data.Dataset):
         c = temp[0]
         id = temp[1]
         if (self.opt.dataset_name == "ModelNet10"):
-            point_filename = os.path.join(self.root, c, 'convonet', str(self.scan), id, 'pointcloud.npz')
+            point_filename = os.path.join(self.root, c, 'scan', str(self.scan), id, 'scan.npz')
         elif (self.opt.dataset_name == "ShapeNet"):
             point_filename = os.path.join(self.root, c, id, 'scan', '4.npz')
         else:

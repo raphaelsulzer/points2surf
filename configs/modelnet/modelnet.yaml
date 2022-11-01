@@ -1,7 +1,7 @@
 method: p2s
 data:
   dataset: ModelNet10
-  classes: ["sofa","monitor"]
+  classes: ["toilet","bed"]
   scan: 42
   path: /mnt/raphael/ModelNet10
   train_split: train
@@ -36,8 +36,10 @@ test:
   eval_mesh: true
   eval_pointcloud: false
 generation:
+  inference: 1
+  eval_mesh: 0
   generation_dir: mesh
-  vis_n_outputs: 2
+  vis_n_outputs: 3
   refine: false
   n_x: 128
   n_z: 1

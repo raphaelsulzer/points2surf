@@ -36,6 +36,7 @@ def full_eval(opt):
     # opt.dataset = os.path.basename(dataset)
     opt.shapes_per_class = cfg["generation"]["vis_n_outputs"]
     opt.query_grid_resolution = cfg["test"]["grid_resolution"]
+    opt.eval_mesh = cfg["generation"]["eval_mesh"]
 
     # reconstruct
     start = time.time()
@@ -85,7 +86,7 @@ def full_eval(opt):
 
     a=8
 
-    os.rename(os.path.join('/mnt/raphael/ShapeNet_out/p2s',opt.models,'rec'),os.path.join('/mnt/raphael/ShapeNet_out/p2s',opt.models,'rec_backup'))
+    # os.rename(os.path.join('/mnt/raphael/ShapeNet_out/p2s',opt.models,'rec'),os.path.join('/mnt/raphael/ShapeNet_out/p2s',opt.models,'rec_backup'))
 
 
 

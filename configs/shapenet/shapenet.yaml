@@ -24,7 +24,7 @@ model:
 training:
   shapes_per_class: 10000
 #  out_dir: /mnt/raphael/ShapeNet_out/p2s/conventional
-  out_dir: /home/qt/sulzerr/scratch/data/ShapeNet_out/p2s/aux_global
+  out_dir: /home/qt/sulzerr/scratch/data/ShapeNet_out/p2s/conventional
   batch_size: 128
   load_model: _best
   n_workers: 4
@@ -40,6 +40,7 @@ test:
   eval_pointcloud: false
 generation:
   inference: 1
+  eval_mesh: 1
   generation_dir: mesh
   vis_n_outputs: 1000
   refine: false

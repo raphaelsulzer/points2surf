@@ -267,7 +267,7 @@ def implicit_surface_to_mesh_file(recon_opt,
     dict["class"] = cname
     dict["id"] = id
 
-    if(mesh is not None):
+    if(mesh is not None and recon_opt.eval_mesh):
         dict["iou"] = eval_mesh(gt_file, mesh, recon_opt.dataset_name == "ShapeNet")
     else:
         dict["iou"] = 0.0

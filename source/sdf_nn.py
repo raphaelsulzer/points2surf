@@ -1,7 +1,7 @@
 import torch
 import torch.nn
 import torch.nn.functional
-
+import time
 
 def post_process_distance(pred):
     distance = torch.tanh(pred).pow(2) * torch.sign(pred)
@@ -14,11 +14,18 @@ def post_process_magnitude(pred):
 
 
 def post_process_sign(pred):
+
     # geodesic distance of disconnected vertices is negative (returned by estimator)
-    distance_pos = pred >= 0.0  # logits to bool
-    distance_sign = torch.full_like(distance_pos, -1.0, dtype=torch.float32)
-    distance_sign[distance_pos] = 1.0  # bool to sign factor
-    return distance_sign
+    # distance_pos = pred >= 0.0  # logits to bool
+    #
+    # distance_sign = torch.full_like(distance_pos, -1.0, dtype=torch.float32)
+    #
+    # distance_sign[distance_pos] = 1.0  # bool to sign factor
+    #
+    # return distance_sign
+    ### I changed this whole function to this, because I do not think it does anything else
+    # the only problem might be that torch.sign(0.0) = 0.0, while it would have been +1 whith their function
+    return torch.sign(pred)
 
 
 def calc_loss_distance(pred, target):

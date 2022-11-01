@@ -23,8 +23,8 @@ model:
   shared_transformer: 0
 training:
   shapes_per_class: 10000
-  out_dir: /mnt/raphael/ShapeNet_out/p2s/aux_global
-#  out_dir: /home/qt/sulzerr/scratch/data/ModelNet10_out/p2s/aux_global
+#  out_dir: /mnt/raphael/ShapeNet_out/p2s/aux_global
+  out_dir: /home/qt/sulzerr/scratch/data/ShapeNet_out/p2s/aux_global
   batch_size: 128
   load_model: _best
   n_workers: 4
@@ -34,12 +34,13 @@ training:
   backup_every: 10000
   features: ['imp_surf_magnitude', 'imp_surf_sign', 'patch_pts_ids', 'p_index']
 test:
-  batch_size: 1024
+  batch_size: 512
   grid_resolution: 128
   eval_mesh: true
   eval_pointcloud: false
 generation:
   inference: 1
+  eval_mesh: 1
   generation_dir: mesh
   vis_n_outputs: 1000
   refine: false

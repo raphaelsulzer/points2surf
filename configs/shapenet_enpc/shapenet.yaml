@@ -1,31 +1,29 @@
 method: p2s
 data:
-  dataset: ModelNet10
-  classes: ["toilet","bed"]
+  dataset: ShapeNet
+  classes: ["02691156"]
   scan: 42
-  path: /mnt/raphael/ModelNet10
-#  path: /home/qt/sulzerr/scratch/data/ModelNet10
+  path: /mnt/raphael/ShapeNet
   train_split: train
   val_split: test
-  test_split: test
+  test_split: test10
 sensor:
   local_aux: 0
-  global_aux: 1
-  vector: sensor_vec_norm
+  global_aux: 0
+  vector: null
   stepsi: [-1]
   stepso: [ 1]
-  ident_dim: 2
+  ident_dim: 0
 model:
   local_subsample: 300
-  global_subsample: 3000
-  local_input_dim: 6
-  global_input_dim: 8
+  global_subsample: 1000
+  local_input_dim: 3
+  global_input_dim: 3
   shared_transformer: 0
 training:
   shapes_per_class: 10000
-  out_dir: /mnt/raphael/ModelNet10_out/p2s/aux_global
-#  out_dir: /home/qt/sulzerr/scratch/data/ModelNet10_out/p2s/aux_global
-  batch_size: 256
+  out_dir: /mnt/raphael/ShapeNet_out/p2s/conventional
+  batch_size: 128
   load_model: _best
   n_workers: 4
   n_workers_val: 4
@@ -40,10 +38,11 @@ test:
   eval_pointcloud: false
 generation:
   inference: 1
-  eval_mesh: 0
+  eval_mesh: 1
   generation_dir: mesh
-  vis_n_outputs: 3  # controls also number of validation objects per class
+  vis_n_outputs: 1
   refine: false
   n_x: 128
   n_z: 1
   file_ending: .ply
+

@@ -21,7 +21,7 @@ class STN(nn.Module):
         self.conv1 = torch.nn.Conv1d(self.dim, 64, 1)
         self.conv2 = torch.nn.Conv1d(64, 128, 1)
         self.conv3 = torch.nn.Conv1d(128, self.net_size_max, 1)
-        self.mp1 = torch.nn.MaxPool1d(num_points)
+        self.mp1 = torch.nn.MaxPool1d(self.num_points)
 
         self.fc1 = nn.Linear(self.net_size_max, int(self.net_size_max / 2))
         self.fc2 = nn.Linear(int(self.net_size_max / 2), int(self.net_size_max / 4))
@@ -313,35 +313,6 @@ class PointsToSurfModel(nn.Module):  # basing on PointNetDenseCls
         # move global points to query point so that both local and global information are centered at the query point
         shape_pts[:,:3,:] -= shape_query_point.expand(shape_pts[:,:3,:].shape)
         # move only the points, not the sensors
-
-
-        # # debug output for a single patch with its sub-sample
-        # if True:
-        #     from source import utils_eval
-        #     out_file = 'debug/train_sample.ply'
-        #     evaluation.visualize_patch(
-        #         patch_pts_ps=patch_features[0].detach().cpu().numpy().transpose(),
-        #         patch_pts_ms=None,
-        #         #query_point_ps=patch_query_point[0].detach().cpu().numpy().transpose().squeeze(),
-        #         query_point_ps=torch.zeros(3),
-        #         pts_sub_sample_ms=shape_features[0].detach().cpu().numpy().transpose(),
-        #         #query_point_ms=shape_query_point[0].detach().cpu().numpy().transpose().squeeze(),
-        #         query_point_ms=torch.zeros(3),
-        #         file_path=out_file)
-        #     print('wrote training sample to {}'.format(out_file))
-
-        # if self.single_transformer:
-        #     local_global_features = torch.cat((patch_features,  shape_features), dim=2)
-        #     local_global_features_transformed, _, _, _ = self.feat_local_global(local_global_features)
-        #     patch_features = F.relu(self.bn1_local_global(self.fc1_local_global(local_global_features_transformed)))
-        # else:
-        #     if self.use_point_stn and self.shared_transformation:
-        #         feats = torch.cat((patch_features,  shape_features), dim=2)
-        #         trans, trans_quat = self.point_stn(feats[:, :3, :])
-        #         shape_features_transformed = torch.bmm(trans, shape_features[:, :3, :])
-        #         patch_features_transformed = torch.bmm(trans, patch_features[:, :3, :])
-        #         shape_features = torch.cat([shape_features_transformed, shape_features[:, 3:, :]], dim=1)
-        #         patch_features = torch.cat([patch_features_transformed, patch_features[:, 3:, :]], dim=1)
 
         shape_pts, trans_global_pts, _, _ = \
             self.feat_global(shape_pts) # this is a PointNet
